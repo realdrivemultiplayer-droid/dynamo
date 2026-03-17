@@ -2,7 +2,9 @@ import {
     joinVoiceChannel,
     createAudioPlayer,
     createAudioResource,
-    AudioPlayerStatus
+    AudioPlayerStatus,
+    VoiceConnectionStatus,
+    entersState
 } from '@discordjs/voice';
 import play from 'play-dl';
 
@@ -44,14 +46,13 @@ async function playSong(queue, guildId) {
     }
 }
 
+// ─── COMANDOS ─────────────────────────────────────────────────────
+
 export async function handlePlay(interaction) {
     const voiceChannel = interaction.member.voice.channel;
-    if (!voiceChannel) {
-        return interaction.reply({ content: 'Debes estar en un canal de voz.', ephemeral: true });
-    }
+    if (!voiceChannel) return interaction.reply({ content: 'Debes estar en un canal de voz.', ephemeral: true });
 
     await interaction.deferReply();
-
     const query = interaction.options.getString('query');
 
     try {
@@ -60,19 +61,11 @@ export async function handlePlay(interaction) {
 
         if (validated === 'video') {
             const info = await play.video_info(query);
-            songInfo = {
-                title: info.video_details.title,
-                url: query,
-                duration: info.video_details.durationRaw
-            };
+            songInfo = { title: info.video_details.title, url: query, duration: info.video_details.durationRaw };
         } else {
             const results = await play.search(query, { limit: 1 });
             if (!results.length) return interaction.editReply('No se encontraron resultados.');
-            songInfo = {
-                title: results[0].title,
-                url: results[0].url,
-                duration: results[0].durationRaw
-            };
+            songInfo = { title: results[0].title, url: results[0].url, duration: results[0].durationRaw };
         }
 
         const guildId = interaction.guildId;
@@ -100,6 +93,17 @@ export async function handlePlay(interaction) {
                 guildId,
                 adapterCreator: interaction.guild.voiceAdapterCreator
             });
+
+            queue.connection.on(VoiceConnectionStatus.Disconnected, async () => {
+                try {
+                    await entersState(queue.connection, VoiceConnectionStatus.Connecting, 5000);
+                } catch {
+                    queue.connection.destroy();
+                    queue.connection = null;
+                    queue.playing = false;
+                }
+            });
+
             queue.connection.subscribe(queue.player);
         }
 
@@ -111,30 +115,26 @@ export async function handlePlay(interaction) {
         }
     } catch (error) {
         console.error('Error en play:', error);
-        await interaction.editReply('Error al reproducir. Verifica la URL o intenta con otro termino.');
+        await interaction.editReply('Error al reproducir. Verifica la URL o intenta con otro término.');
     }
 }
 
 export async function handlePause(interaction) {
     const queue = queues.get(interaction.guildId);
-    if (!queue?.player) {
-        return interaction.reply({ content: 'No hay musica reproduciendose.', ephemeral: true });
-    }
+    if (!queue?.player) return interaction.reply({ content: 'No hay música reproduciéndose.', ephemeral: true });
 
     if (queue.player.state.status === AudioPlayerStatus.Playing) {
         queue.player.pause();
-        await interaction.reply('Musica pausada.');
+        await interaction.reply('Música pausada.');
     } else {
         queue.player.unpause();
-        await interaction.reply('Musica reanudada.');
+        await interaction.reply('Música reanudada.');
     }
 }
 
 export async function handleSkip(interaction) {
     const queue = queues.get(interaction.guildId);
-    if (!queue?.songs.length) {
-        return interaction.reply({ content: 'No hay canciones en la cola.', ephemeral: true });
-    }
+    if (!queue?.songs.length) return interaction.reply({ content: 'No hay canciones en la cola.', ephemeral: true });
 
     queue.songs.shift();
     if (queue.songs.length) {
@@ -147,15 +147,13 @@ export async function handleSkip(interaction) {
             queue.connection = null;
         }
         queue.playing = false;
-        await interaction.reply('Cola vacia. Desconectando.');
+        await interaction.reply('Cola vacía. Desconectando.');
     }
 }
 
 export async function handleStop(interaction) {
     const queue = queues.get(interaction.guildId);
-    if (!queue?.connection) {
-        return interaction.reply({ content: 'El bot no esta en un canal de voz.', ephemeral: true });
-    }
+    if (!queue?.connection) return interaction.reply({ content: 'El bot no está en un canal de voz.', ephemeral: true });
 
     queue.songs = [];
     queue.player?.stop();
@@ -164,19 +162,17 @@ export async function handleStop(interaction) {
     queue.playing = false;
     queues.delete(interaction.guildId);
 
-    await interaction.reply('Musica detenida.');
+    await interaction.reply('Música detenida.');
 }
 
 export async function handleQueue(interaction) {
     const queue = queues.get(interaction.guildId);
-    if (!queue?.songs.length) {
-        return interaction.reply({ content: 'La cola esta vacia.', ephemeral: true });
-    }
+    if (!queue?.songs.length) return interaction.reply({ content: 'La cola está vacía.', ephemeral: true });
 
     const list = queue.songs.slice(0, 10).map((s, i) =>
         `${i === 0 ? '[Reproduciendo]' : `${i + 1}.`} **${s.title}** (${s.duration})`
     ).join('\n');
 
-    const more = queue.songs.length > 10 ? `\n... y ${queue.songs.length - 10} mas` : '';
-    await interaction.reply(`**Cola de reproduccion:**\n${list}${more}`);
+    const more = queue.songs.length > 10 ? `\n... y ${queue.songs.length - 10} más` : '';
+    await interaction.reply(`**Cola de reproducción:**\n${list}${more}`);
 }
