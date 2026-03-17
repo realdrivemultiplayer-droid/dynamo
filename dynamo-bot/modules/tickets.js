@@ -1,3 +1,4 @@
+// modules/ticket-manager.js
 import { 
     ChannelType, 
     PermissionsBitField, 
@@ -9,7 +10,7 @@ import {
 import { getDB } from '../database/db.js';
 import { getConfig } from './config-manager.js';
 
-// Guard de creacion por usuario+guild para evitar doble-click
+// Guard de creación por usuario+guild para evitar doble-click
 const creating = new Set();
 
 /**
@@ -82,7 +83,7 @@ export async function handleTicketCreation(message) {
             const existingChannel = message.guild.channels.cache.get(existing.channel_id);
             if (existingChannel) {
                 message.reply({
-                    content: `Ya tienes un ticket abierto en <#${existing.channel_id}>. Usa el botón o escribe \`!close\` ahi para cerrarlo primero.`
+                    content: `Ya tienes un ticket abierto en <#${existing.channel_id}>. Usa el botón o escribe \`!close\` ahí para cerrarlo primero.`
                 }).then(warn => setTimeout(() => warn.delete().catch(() => {}), 7000)).catch(() => {});
                 message.delete().catch(() => {});
                 return true;
@@ -190,7 +191,7 @@ export async function handleTicketCreation(message) {
             .catch(() => {});
         return false;
     } finally {
-        creating.delete(guardKey);
+        creating.delete(`${message.guild.id}:${message.author.id}`);
     }
 }
 
