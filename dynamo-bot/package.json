@@ -5,6 +5,7 @@
   "type": "module",
   "description": "Dynamo Bot - Sloet Games Discord Bot",
   "scripts": {
+    "start": "main.js"
     "dev": "node main.js",
     "start": "node main.js"
   },
