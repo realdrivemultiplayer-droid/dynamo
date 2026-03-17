@@ -1,46 +1,10 @@
-// modules/ticket-manager.js
-import { 
-    ChannelType, 
-    PermissionsBitField, 
-    EmbedBuilder, 
-    ActionRowBuilder, 
-    ButtonBuilder, 
-    ButtonStyle 
-} from 'discord.js';
+import { ChannelType, PermissionsBitField, EmbedBuilder } from 'discord.js';
 import { getDB } from '../database/db.js';
 import { getConfig } from './config-manager.js';
 
-// Guard de creación por usuario+guild para evitar doble-click
+// Guard de creacion por usuario+guild para evitar doble-click
 const creating = new Set();
 
-/**
- * Enviar mensaje con botón de abrir ticket al canal configurado
- */
-export async function sendTicketButtonMessage(guild) {
-    const config = getConfig(guild.id);
-    const ticketChannelId = config.ticket_channel_id?.trim();
-    if (!ticketChannelId) return;
-
-    const channel = guild.channels.cache.get(ticketChannelId);
-    if (!channel || !channel.isTextBased()) return;
-
-    const buttonRow = new ActionRowBuilder()
-        .addComponents(
-            new ButtonBuilder()
-                .setCustomId('open_ticket')
-                .setLabel('Abrir Ticket')
-                .setStyle(ButtonStyle.Primary)
-        );
-
-    await channel.send({
-        content: 'Haz clic en el botón para abrir un ticket.',
-        components: [buttonRow]
-    }).catch(() => {});
-}
-
-/**
- * Maneja la creación de tickets por mensaje
- */
 export async function handleTicketCreation(message) {
     if (!message.guild || message.author.bot) return false;
 
@@ -48,7 +12,7 @@ export async function handleTicketCreation(message) {
     const ticketCategoryId = config.ticket_category_id?.trim() || '';
     const ticketChannelId  = config.ticket_channel_id?.trim()  || '';
 
-    // Comando !close
+    // Comando !close: verificar por ID en la BD, no por nombre
     if (message.content.toLowerCase() === '!close') {
         const db = getDB();
         const isTicket = await db.get(
@@ -83,19 +47,17 @@ export async function handleTicketCreation(message) {
             const existingChannel = message.guild.channels.cache.get(existing.channel_id);
             if (existingChannel) {
                 message.reply({
-                    content: `Ya tienes un ticket abierto en <#${existing.channel_id}>. Usa el botón o escribe \`!close\` ahí para cerrarlo primero.`
+                    content: `Ya tienes un ticket abierto en <#${existing.channel_id}>. Escribe \`!close\` ahi para cerrarlo primero.`
                 }).then(warn => setTimeout(() => warn.delete().catch(() => {}), 7000)).catch(() => {});
                 message.delete().catch(() => {});
                 return true;
             }
-            // Marcar ticket anterior como cerrado
             db.run(
                 'UPDATE tickets SET status = ?, closed_at = CURRENT_TIMESTAMP WHERE id = ?',
                 ['closed', existing.id]
             ).catch(() => {});
         }
 
-        // Nombre seguro para canal
         const safeUsername = message.author.username
             .toLowerCase()
             .replace(/[^a-z0-9]/g, '-')
@@ -148,28 +110,20 @@ export async function handleTicketCreation(message) {
         const timeStr = now.toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' });
         const reasonStr = message.content || 'Sin especificar';
 
-        const closeButtonRow = new ActionRowBuilder()
-            .addComponents(
-                new ButtonBuilder()
-                    .setCustomId('close_ticket')
-                    .setLabel('Cerrar Ticket')
-                    .setStyle(ButtonStyle.Danger)
-            );
-
         const embed = new EmbedBuilder()
             .setColor('#FF8C00')
             .setTitle('Ticket Abierto')
             .setThumbnail(message.author.displayAvatarURL({ size: 64, extension: 'png' }))
             .setDescription(
-                `Hola <@${message.author.id}>, el equipo de soporte atenderá tu solicitud en breve.\n\n` +
+                `Hola <@${message.author.id}>, el equipo de soporte atendara tu solicitud en breve.\n\n` +
                 `**Motivo:** ${reasonStr}\n` +
                 `**Fecha:** ${dateStr} — **Hora:** ${timeStr}`
             )
-            .setFooter({ text: 'Puedes cerrar el ticket con el botón o usando !close.' })
+            .setFooter({ text: 'Escribe !close para cerrar este ticket.' })
             .setTimestamp();
 
         await Promise.all([
-            ticketChannel.send({ content: `<@${message.author.id}>`, embeds: [embed], components: [closeButtonRow] }),
+            ticketChannel.send({ content: `<@${message.author.id}>`, embeds: [embed] }),
             message.delete().catch(() => {})
         ]);
 
@@ -183,39 +137,18 @@ export async function handleTicketCreation(message) {
 
     } catch (error) {
         console.error(`[${message.guild.name}] Error creando ticket:`, error.code, error.message);
-        let errorMsg = 'Ocurrió un error al crear tu ticket. Contacta a un administrador.';
+        let errorMsg = 'Ocurrio un error al crear tu ticket. Contacta a un administrador.';
         if (error.code === 50013) errorMsg = 'El bot no tiene el permiso **Gestionar Canales**.';
-        if (error.code === 50001) errorMsg = 'El bot no tiene acceso a la categoría de tickets.';
+        if (error.code === 50001) errorMsg = 'El bot no tiene acceso a la categoria de tickets.';
         message.channel.send(errorMsg)
             .then(m => setTimeout(() => m.delete().catch(() => {}), 5000))
             .catch(() => {});
         return false;
     } finally {
-        creating.delete(`${message.guild.id}:${message.author.id}`);
+        creating.delete(guardKey);
     }
 }
 
-/**
- * Maneja interacción de botones de tickets
- */
-export async function handleTicketButton(interaction) {
-    if (!interaction.guild) return;
-
-    if (interaction.customId === 'open_ticket') {
-        handleTicketCreation(interaction.message);
-        await interaction.deferUpdate();
-    }
-
-    if (interaction.customId === 'close_ticket') {
-        const config = getConfig(interaction.guild.id);
-        closeTicket(interaction.message, config);
-        await interaction.deferUpdate();
-    }
-}
-
-/**
- * Cierra un ticket existente
- */
 async function closeTicket(message, config) {
     if (!message.guild) return;
     const db = getDB();
@@ -246,7 +179,7 @@ async function closeTicket(message, config) {
         .setTitle('Ticket Cerrado')
         .setDescription(
             `Ticket cerrado por <@${message.author.id}>.\n` +
-            `Este canal se eliminará en **5 segundos**.`
+            `Este canal se eliminara en **5 segundos**.`
         )
         .setTimestamp();
 
