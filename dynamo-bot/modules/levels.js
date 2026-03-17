@@ -1,6 +1,6 @@
 import { PermissionsBitField } from 'discord.js';
 import { getDB } from '../database/db.js';
-import { getConfig } from '../config/config-manager.js'; // asegúrate que la ruta sea exacta
+import { getConfig } from './config-manager.js'; // ruta ajustada a modules/
 
 // 🔒 Anti-spam
 const cooldowns = new Map();
@@ -20,16 +20,9 @@ async function updateLevelRole(member, guildId, totalXp) {
         if (!levelRoles.length) return;
 
         let newRoleId = null;
+        for (const lr of levelRoles) if (totalXp >= lr.xp_required) newRoleId = lr.role_id;
 
-        for (const lr of levelRoles) {
-            if (totalXp >= lr.xp_required) newRoleId = lr.role_id;
-        }
-
-        // 🔥 Limpieza de roles anteriores
-        const userRoles = levelRoles.filter(lr =>
-            member.roles.cache.has(lr.role_id)
-        );
-
+        const userRoles = levelRoles.filter(lr => member.roles.cache.has(lr.role_id));
         for (const r of userRoles) {
             if (r.role_id !== newRoleId) {
                 await member.roles.remove(r.role_id).catch(err =>
@@ -53,7 +46,6 @@ export async function handleLevelup(message) {
     try {
         if (!message || !message.guild || !message.member || message.author.bot) return;
 
-        // 🔥 Obtener config real desde DB
         let config;
         try {
             config = await getConfig(message.guild.id);
@@ -62,7 +54,6 @@ export async function handleLevelup(message) {
             return;
         }
 
-        // ⏱️ Anti-spam
         const now = Date.now();
         const lastXp = cooldowns.get(message.author.id) || 0;
         if (now - lastXp < 15000) return;
@@ -85,9 +76,9 @@ export async function handleLevelup(message) {
             return;
         }
 
-        const newXp      = (user.xp || 0) + xpGain;
+        const newXp = (user.xp || 0) + xpGain;
         const newTotalXp = (user.total_xp || 0) + xpGain;
-        const nextLvlXp  = ((user.level || 1) + 1) * 100;
+        const nextLvlXp = ((user.level || 1) + 1) * 100;
 
         if (newXp >= nextLvlXp) {
             const newLevel = (user.level || 1) + 1;
@@ -97,7 +88,6 @@ export async function handleLevelup(message) {
                 [newLevel, newTotalXp, message.author.id, guildId]
             ).catch(err => console.error('Error actualizando level:', err));
 
-            // 📢 Canal seguro desde config
             let levCh = message.channel;
             if (config?.levels_channel_id) {
                 const ch = message.guild.channels.cache.get(config.levels_channel_id);
@@ -108,7 +98,6 @@ export async function handleLevelup(message) {
                 await levCh.send(`🎉 **${message.author.username}** alcanzó el **Nivel ${newLevel}**.`)
                     .catch(err => console.error('Error enviando mensaje levelup:', err));
             }
-
         } else {
             await db.run(
                 'UPDATE users SET xp = ?, total_xp = ? WHERE user_id = ? AND guild_id = ?',
