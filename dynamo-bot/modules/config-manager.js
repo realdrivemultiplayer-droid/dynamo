@@ -16,15 +16,13 @@ export async function initGuildConfig(guildId) {
         const db = getDB();
 
         // 🔹 Asegura que exista en DB
-        await db.none(
-            `INSERT INTO guild_configs (guild_id) 
-             VALUES ($1) 
-             ON CONFLICT (guild_id) DO NOTHING`,
+        await db.run(
+            'INSERT OR IGNORE INTO guild_configs (guild_id) VALUES (?)',
             [guildId]
         );
 
-        const row = await db.oneOrNone(
-            'SELECT * FROM guild_configs WHERE guild_id = $1',
+        const row = await db.get(
+            'SELECT * FROM guild_configs WHERE guild_id = ?',
             [guildId]
         );
 
@@ -48,16 +46,14 @@ export async function getConfig(guildId) {
         const db = getDB();
 
         // 🔹 Asegura existencia en DB (clave para Railway)
-        await db.none(
-            `INSERT INTO guild_configs (guild_id) 
-             VALUES ($1) 
-             ON CONFLICT (guild_id) DO NOTHING`,
+        await db.run(
+            'INSERT OR IGNORE INTO guild_configs (guild_id) VALUES (?)',
             [guildId]
         );
 
         // 🔹 Obtiene desde DB
-        const row = await db.oneOrNone(
-            'SELECT * FROM guild_configs WHERE guild_id = $1',
+        const row = await db.get(
+            'SELECT * FROM guild_configs WHERE guild_id = ?',
             [guildId]
         );
 
@@ -89,16 +85,16 @@ export async function setConfig(guildId, field, value) {
             throw new Error(`Campo inválido: ${field}`);
         }
 
-        await db.none(
+        await db.run(
             `UPDATE guild_configs 
-             SET ${field} = $1, updated_at = CURRENT_TIMESTAMP 
-             WHERE guild_id = $2`,
+             SET ${field} = ?, updated_at = CURRENT_TIMESTAMP 
+             WHERE guild_id = ?`,
             [value, guildId]
         );
 
         // 🔹 Refresca cache
-        const row = await db.oneOrNone(
-            'SELECT * FROM guild_configs WHERE guild_id = $1',
+        const row = await db.get(
+            'SELECT * FROM guild_configs WHERE guild_id = ?',
             [guildId]
         );
 
