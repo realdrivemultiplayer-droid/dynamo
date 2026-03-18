@@ -3,9 +3,13 @@
   "compilerOptions": {
     "outDir": "dist",
     "rootDir": "src",
-    "types": ["node"]
+    "types": ["node"],
+    "allowJs": true,
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "strict": false
   },
-  "include": ["src"],
+  "include": ["src", "../../lib/**/*.js", "../../lib/**/*.ts"],
   "references": [
     {
       "path": "../../lib/db"
