@@ -1,65 +1,62 @@
-// database/db.js
-import pgPromise from 'pg-promise';
+import sqlite3 from 'sqlite3';
+import { open } from 'sqlite';
+import fs from 'fs';
+import path from 'path';
 
-// Configuración de conexión
-const pgp = pgPromise();
-const db = pgp({
-    host: process.env.PGHOST || 'localhost',   // Host de tu DB
-    port: process.env.PGPORT || 5432,          // Puerto
-    database: process.env.PGDATABASE || 'dynamo', // Nombre de la DB
-    user: process.env.PGUSER || 'user',        // Usuario
-    password: process.env.PGPASSWORD || 'pass', // Contraseña
-    max: 30,                                   // Máx conexiones
-});
+const DB_PATH = 'database/cipher.sqlite';
 
-// Inicializa las tablas si no existen
+let db = null;
+
 export async function initDB() {
-    try {
-        await db.none(`
-            CREATE TABLE IF NOT EXISTS users (
-                user_id TEXT PRIMARY KEY,
-                username TEXT,
-                level INTEGER DEFAULT 0,
-                xp INTEGER DEFAULT 0,
-                warnings INTEGER DEFAULT 0,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+    db = await open({
+        filename: DB_PATH,
+        driver: sqlite3.Database
+    });
 
-            CREATE TABLE IF NOT EXISTS guild_config (
-                guild_id TEXT PRIMARY KEY,
-                welcome_enabled BOOLEAN DEFAULT TRUE,
-                autorole_id TEXT,
-                moderation_level TEXT DEFAULT 'medium',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
+    await db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            user_id TEXT PRIMARY KEY,
+            username TEXT,
+            level INTEGER DEFAULT 0,
+            xp INTEGER DEFAULT 0,
+            warnings INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 
-            CREATE TABLE IF NOT EXISTS tickets (
-                id SERIAL PRIMARY KEY,
-                user_id TEXT,
-                guild_id TEXT,
-                channel_id TEXT,
-                reason TEXT,
-                status TEXT DEFAULT 'open',
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                closed_at TIMESTAMP
-            );
+        CREATE TABLE IF NOT EXISTS guild_config (
+            guild_id TEXT PRIMARY KEY,
+            welcome_enabled INTEGER DEFAULT 1,
+            autorole_id TEXT,
+            moderation_level TEXT DEFAULT 'medium',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
 
-            CREATE TABLE IF NOT EXISTS logs (
-                id SERIAL PRIMARY KEY,
-                guild_id TEXT,
-                action TEXT,
-                user_id TEXT,
-                target_id TEXT,
-                details TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            );
-        `);
+        CREATE TABLE IF NOT EXISTS tickets (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT,
+            guild_id TEXT,
+            channel_id TEXT,
+            reason TEXT,
+            status TEXT DEFAULT 'open',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            closed_at DATETIME
+        );
 
-        console.log('✅ Base de datos PostgreSQL inicializada');
-    } catch (err) {
-        console.error('❌ Error inicializando PostgreSQL:', err.message);
-    }
+        CREATE TABLE IF NOT EXISTS logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            guild_id TEXT,
+            action TEXT,
+            user_id TEXT,
+            target_id TEXT,
+            details TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    `);
+
+    console.log('✅ Base de datos inicializada');
+    return db;
 }
 
-// Exporta la instancia para usarla en todo el bot
-export { db };
+export function getDB() {
+    return db;
+}
