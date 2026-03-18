@@ -2,7 +2,8 @@ const conversations  = new Map(); // userId -> messages[]
 const userRateLimit  = new Map(); // userId -> { count, cooldownUntil }
 
 function getGroqKeys(config) {
-    return String(config.GROQ_KEYS || '').split(',').map(k => k.trim()).filter(Boolean);
+    const raw = config.GROQ_KEYS || config.GROQ_KEY || '';
+    return String(raw).split(',').map(k => k.trim()).filter(Boolean);
 }
 
 function canSend(userId) {
@@ -26,12 +27,14 @@ function recordMessage(userId) {
 }
 
 export async function handleIA(message, globalConfig, guildConfig) {
+    if (message.author.bot) return false;
+
     const isDM        = message.channel.isDMBased();
     const isMentioned = message.mentions.has(message.client.user);
 
     if (!isDM) {
         const iaEnabled = guildConfig?.ia_enabled;
-        if (iaEnabled === 0) return false;
+        if (iaEnabled === false) return false;
         if (!isMentioned) return false;
     }
 
