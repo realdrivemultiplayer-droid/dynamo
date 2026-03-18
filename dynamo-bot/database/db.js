@@ -70,5 +70,6 @@ export async function initDB() {
     }
 }
 
-// Exporta la instancia para usarla en todo el bot
+// Exporta la instancia (db) y la función (getDB) para que los módulos antiguos no den error
 export { db };
+export const getDB = () => db;
