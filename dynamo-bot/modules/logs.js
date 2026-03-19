@@ -1,5 +1,8 @@
 import { EmbedBuilder, AuditLogEvent, PermissionsBitField, ChannelType } from 'discord.js';
-import { getConfig } from './config-manager.js';
+
+// Ajuste Opción A: Importación compatible con CommonJS
+import configPkg from './config-manager.js';
+const { getConfig } = configPkg;
 
 // ─── Utilidades ────────────────────────────────────────────────────
 
@@ -15,12 +18,12 @@ async function getLogChannel(guild) {
         // Intentamos obtenerlo de la caché del servidor
         let channel = guild.channels.cache.get(cfg.logs_channel_id);
         
-        // Si no está en caché (común tras reinicio o config nueva), lo forzamos con fetch
+        // Si no está en caché, lo forzamos con fetch
         if (!channel) {
             channel = await guild.channels.fetch(cfg.logs_channel_id).catch(() => null);
         }
 
-        // Verificamos que sea un canal de texto donde el bot pueda escribir
+        // Verificamos que sea un canal de texto
         if (channel && channel.isTextBased()) {
             return channel;
         }
@@ -69,7 +72,6 @@ async function getAuditUser(guild, action, targetId = null) {
         const log   = entry.entries.first();
         if (!log) return null;
         
-        // Validamos que el objetivo coincida y que el log sea reciente (menos de 5 segundos)
         if (targetId && log.target?.id !== targetId) return null;
         if (Date.now() - log.createdTimestamp > 5000) return null;
         
