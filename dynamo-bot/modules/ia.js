@@ -1,4 +1,5 @@
 import { getDB } from '../database/db.js';
+import { PermissionFlagsBits } from 'discord.js';
 
 const conversations  = new Map(); // userId -> mensajes en memoria
 const userUsage      = new Map(); // ID (User o Guild) -> { count, cooldownUntil }
@@ -6,9 +7,10 @@ const userUsage      = new Map(); // ID (User o Guild) -> { count, cooldownUntil
 // ---------------------------------------------------------
 // 🔹 CONFIGURACIÓN DE LÍMITES (MODIFICA AQUÍ)
 // ---------------------------------------------------------
-const LIMIT_DMS = 10;        // Cantidad de mensajes permitidos en DM
-const LIMIT_SERVER = 20;     // Cantidad de mensajes permitidos en Servidores
-const COOLDOWN_MINUTES = 5;  // Tiempo de espera en minutos
+const LIMIT_DMS = 10;        
+const LIMIT_SERVER = 20;     
+const COOLDOWN_MINUTES = 5;  
+const MAX_CONTENT_LENGTH = 500; // 🔹 Punto 6: Máximo de caracteres por mensaje
 // ---------------------------------------------------------
 
 function getGroqKeys(config) {
@@ -16,13 +18,10 @@ function getGroqKeys(config) {
     return String(raw).split(',').map(k => k.trim()).filter(Boolean);
 }
 
-// Nueva lógica de control de spam
 function checkSpam(id, limit) {
     const now = Date.now();
     const data = userUsage.get(id) || { count: 0, cooldownUntil: 0 };
-
     if (data.cooldownUntil > now) return { allowed: false };
-
     if (data.count >= limit) {
         userUsage.set(id, { count: 0, cooldownUntil: now + (COOLDOWN_MINUTES * 60 * 1000) });
         return { allowed: false };
@@ -38,43 +37,51 @@ function recordUsage(id) {
 export async function handleIA(message, globalConfig, guildConfig) {
     if (message.author.bot) return false;
 
+    // 🔹 Punto 1: Validar permisos antes de procesar nada
+    if (message.guild && !message.guild.members.me.permissionsIn(message.channel).has(PermissionFlagsBits.SendMessages)) {
+        return false;
+    }
+
     const isDM        = message.channel.isDMBased();
     const isMentioned = message.mentions.has(message.client.user);
     const userId      = message.author.id;
-    
-    // Identificador para el límite: User ID en DM, Guild ID en Servidores
     const limitId     = isDM ? userId : message.guildId;
 
     if (!isDM) {
-        const iaEnabled = guildConfig?.ia_enabled;
-        if (!iaEnabled) return false; 
-        if (!isMentioned) return false;
+        if (!guildConfig?.ia_enabled || !isMentioned) return false;
+    }
+
+    // 🔹 Punto 5: Filtrar mensajes inútiles (< 3 caracteres)
+    const userContent = message.content.replace(/<@!?\d+>/g, '').trim();
+    if (userContent.length < 3) return false;
+
+    // 🔹 Punto 6: Limitar longitud de mensajes (> 500 caracteres)
+    if (userContent.length > MAX_CONTENT_LENGTH) {
+        await message.reply(`⚠️ Tu mensaje es muy largo. El máximo permitido es de ${MAX_CONTENT_LENGTH} caracteres.`).catch(() => {});
+        return true;
     }
 
     const keys = getGroqKeys(globalConfig);
     if (!keys.length) return false;
 
-    // 🔹 VALIDACIÓN DE LÍMITES
     const currentLimit = isDM ? LIMIT_DMS : LIMIT_SERVER;
     const spamCheck = checkSpam(limitId, currentLimit);
 
     if (!spamCheck.allowed) {
-        if (isDM) {
-            await message.reply(`Has consumido el límite del plan Free, espere ${COOLDOWN_MINUTES} Minutos para continuar el chat.`).catch(() => {});
-        } else {
-            await message.reply(`Se a consumido el límite de mensajes en este servidor, espere ${COOLDOWN_MINUTES} Minutos.`).catch(() => {});
-        }
+        const msg = isDM 
+            ? `Has consumido el límite del plan Free, espere ${COOLDOWN_MINUTES} Minutos para continuar el chat.`
+            : `Se ha consumido el límite de mensajes en este servidor, espere ${COOLDOWN_MINUTES} Minutos.`;
+        await message.reply(msg).catch(() => {});
         return true;
     }
 
+    // 🔹 Punto 4: Registrar uso ANTES del fetch (Protección preventiva)
+    recordUsage(limitId);
+
     const history = conversations.get(userId) || [];
-    conversations.set(userId, history);
-
-    const userContent = message.content.replace(/<@!?\d+>/g, '').trim();
-    if (!userContent) return false;
-
     history.push({ role: 'user', content: userContent });
     if (history.length > 10) history.splice(0, 2);
+    conversations.set(userId, history);
 
     const systemPrompt = globalConfig.KNOWLEDGE || 'Te llamas Dynamo, un Bot de Discord desarrollado por Sloet Froom ™. Respondes de forma técnica, precisa y sin usar emojis.';
 
@@ -90,9 +97,11 @@ export async function handleIA(message, globalConfig, guildConfig) {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    model: 'llama-3.3-70b-versatile',
+                    // 🔹 Punto 2: Modelo económico llama-3.1-8b-instant
+                    model: 'llama-3.1-8b-instant', 
                     messages: [ { role: 'system', content: systemPrompt }, ...history ],
-                    max_tokens: 1024,
+                    // 🔹 Punto 3: Reducir límite de tokens a 300
+                    max_tokens: 300, 
                     temperature: 0.7 
                 })
             });
@@ -104,21 +113,17 @@ export async function handleIA(message, globalConfig, guildConfig) {
 
             const data  = await response.json();
             const reply = data.choices[0]?.message?.content;
-            if (!reply) throw new Error('Respuesta vacía de Groq');
+            if (!reply) throw new Error('Respuesta vacía');
 
             history.push({ role: 'assistant', content: reply });
-            
-            // 🔹 REGISTRAMOS EL USO Y GUARDAMOS EN DB
-            recordUsage(limitId);
 
+            // Guardar en DB (Postgres)
             const db = getDB();
             await db.none(
-                `INSERT INTO users (user_id, username) 
-                 VALUES ($1, $2) 
-                 ON CONFLICT (user_id) 
-                 DO UPDATE SET username = $2`,
+                `INSERT INTO users (user_id, username) VALUES ($1, $2) 
+                 ON CONFLICT (user_id) DO UPDATE SET username = $2`,
                 [userId, message.author.username]
-            ).catch(err => console.error("Error al guardar en DB:", err));
+            ).catch(err => console.error("Error DB:", err));
 
             const chunks = reply.match(/[\s\S]{1,2000}/g) || [reply];
             for (const chunk of chunks) {
@@ -128,11 +133,10 @@ export async function handleIA(message, globalConfig, guildConfig) {
             return true;
         } catch (error) {
             lastError = error;
-            console.error(`Error con key Groq: ${error.message}`);
+            console.error(`Error key: ${error.message}`);
         }
     }
 
-    console.error('Todas las keys de Groq fallaron:', lastError?.message);
     await message.reply('Error al conectar con el sistema de IA. Intenta de nuevo.').catch(() => {});
     return true;
 }
