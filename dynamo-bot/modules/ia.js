@@ -70,7 +70,7 @@ export async function handleIA(message, globalConfig, guildConfig) {
         try {
             await message.channel.sendTyping().catch(() => {});
 
-            // 🔹 MODIFICACIÓN: URL corregida de Groq
+            // 🔹 MODIFICACIÓN: URL corregida (sin api. duplicado)
             const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
                 method: 'POST',
                 headers: {
@@ -100,15 +100,15 @@ export async function handleIA(message, globalConfig, guildConfig) {
             history.push({ role: 'assistant', content: reply });
             recordMessage(userId);
 
-            // 🔹 MODIFICACIÓN: GUARDAR DATOS EN POSTGRESQL (RAILWAY)
-            **const db = getDB();**
-            **await db.none(**
-                **`INSERT INTO users (user_id, username) 
+            // 🔹 MODIFICACIÓN: REGISTRO EN RAILWAY (POSTGRESQL)
+            const db = getDB();
+            await db.none(
+                `INSERT INTO users (user_id, username) 
                  VALUES ($1, $2) 
                  ON CONFLICT (user_id) 
-                 DO UPDATE SET username = $2`,**
-                **[userId, message.author.username]**
-            **).catch(err => console.error("Error al guardar en DB:", err));**
+                 DO UPDATE SET username = $2`,
+                [userId, message.author.username]
+            ).catch(err => console.error("Error al guardar en DB:", err));
 
             const chunks = reply.match(/[\s\S]{1,2000}/g) || [reply];
             for (const chunk of chunks) {
