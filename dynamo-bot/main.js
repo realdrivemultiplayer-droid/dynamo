@@ -19,8 +19,7 @@ import { handlePlay, handlePause, handleSkip, handleStop, handleQueue } from './
 import {
     onChannelCreate, onChannelDelete, onChannelUpdate,
     onRoleCreate, onRoleDelete, onRoleUpdate,
-    onGuildUpdate, onGuildMemberUpdate,
-    onGuildBanAdd, onNewBot, onMessageDelete
+    onGuildUpdate, onGuildBanAdd, onNewBot, onMessageDelete
 } from './modules/logs.js';
 
 const DYNAMO_PATH = './dynamo.sf';
@@ -160,7 +159,7 @@ async function handleConfigCommand(interaction) {
     const guildId = interaction.guildId;
 
     if (sub === 'ver') {
-        const cfg = await getConfig(guildId); // AWAIT AÑADIDO
+        const cfg = await getConfig(guildId);
         const db = getDB();
         const levelRoles = await db.all('SELECT * FROM level_roles WHERE guild_id = ? ORDER BY xp_required ASC', [guildId]);
         const lrStr = levelRoles.length ? levelRoles.map(lr => `<@&${lr.role_id}> — ${lr.xp_required} XP`).join('\n') : 'No configurado';
@@ -224,10 +223,16 @@ client.on('messageCreate', async (message) => {
     } catch (e) { console.error('Error mensaje:', e); }
 });
 
+// ─── Logs de Canales y Roles ────────────────────────────────────────
 client.on('channelCreate', (c) => onChannelCreate(c));
 client.on('channelDelete', (c) => onChannelDelete(c));
+client.on('channelUpdate', (o, n) => onChannelUpdate(o, n));
+client.on('roleCreate', (r) => onRoleCreate(r));
+client.on('roleDelete', (r) => onRoleDelete(r));
+client.on('roleUpdate', (o, n) => onRoleUpdate(o, n));
+client.on('guildUpdate', (o, n) => onGuildUpdate(o, n));
+client.on('guildBanAdd', (b) => onGuildBanAdd(b));
 client.on('messageDelete', (m) => onMessageDelete(m));
-// (Demás eventos de logs...)
 
 (async () => {
     await initDB();
