@@ -4,17 +4,30 @@ import { getConfig } from './config-manager.js';
 // ─── Utilidades ────────────────────────────────────────────────────
 
 /**
- * Obtiene el canal de logs de forma asíncrona buscando en caché o API.
+ * Obtiene el canal de logs de forma asíncrona.
+ * Consulta la DB y luego busca el canal en la caché o mediante la API.
  */
 async function getLogChannel(guild) {
-    const cfg = await getConfig(guild.id); // Esperamos a la DB/Cache
-    if (!cfg || !cfg.logs_channel_id) return null;
-    
     try {
-        // Intentamos caché, si no, forzamos búsqueda en la API de Discord
-        return guild.channels.cache.get(cfg.logs_channel_id) 
-               || await guild.channels.fetch(cfg.logs_channel_id);
-    } catch {
+        const cfg = await getConfig(guild.id);
+        if (!cfg || !cfg.logs_channel_id) return null;
+
+        // Intentamos obtenerlo de la caché del servidor
+        let channel = guild.channels.cache.get(cfg.logs_channel_id);
+        
+        // Si no está en caché (común tras reinicio o config nueva), lo forzamos con fetch
+        if (!channel) {
+            channel = await guild.channels.fetch(cfg.logs_channel_id).catch(() => null);
+        }
+
+        // Verificamos que sea un canal de texto donde el bot pueda escribir
+        if (channel && channel.isTextBased()) {
+            return channel;
+        }
+        
+        return null;
+    } catch (error) {
+        console.error(`[LOGS ERROR] Error al obtener canal en ${guild.name}:`, error.message);
         return null;
     }
 }
@@ -25,29 +38,41 @@ async function getLogChannel(guild) {
 async function send(guild, embed) {
     try {
         const ch = await getLogChannel(guild);
-        if (ch && ch.isTextBased()) {
+        if (ch) {
             await ch.send({ embeds: [embed] });
         }
     } catch (err) {
-        console.error(`[LOG ERROR] Error en ${guild.name}:`, err.message);
+        console.error(`[LOG SEND ERROR] Fallo al enviar en ${guild.name}:`, err.message);
     }
 }
 
+/**
+ * Crea la base estética de los embeds de logs.
+ */
 function base(title, guild) {
     return new EmbedBuilder()
-        .setColor('#ED4245')
+        .setColor('#ED4245') // Rojo estético
         .setTitle(`🛑 ${title}`)
-        .setFooter({ text: `Logs • ${guild.name}`, iconURL: guild.iconURL({ extension: 'png' }) ?? undefined })
+        .setFooter({ 
+            text: `Logs • ${guild.name}`, 
+            iconURL: guild.iconURL({ extension: 'png' }) ?? undefined 
+        })
         .setTimestamp();
 }
 
+/**
+ * Busca al responsable del evento en el Audit Log.
+ */
 async function getAuditUser(guild, action, targetId = null) {
     try {
         const entry = await guild.fetchAuditLogs({ type: action, limit: 1 });
         const log   = entry.entries.first();
         if (!log) return null;
+        
+        // Validamos que el objetivo coincida y que el log sea reciente (menos de 5 segundos)
         if (targetId && log.target?.id !== targetId) return null;
         if (Date.now() - log.createdTimestamp > 5000) return null;
+        
         return log.executor;
     } catch {
         return null;
@@ -76,8 +101,8 @@ function channelTypeName(type) {
     const names = {
         [ChannelType.GuildText]:         'Texto',
         [ChannelType.GuildVoice]:        'Voz',
-        [ChannelType.GuildCategory]:     'Categoria',
-        [ChannelType.GuildAnnouncement]: 'Anuncio',
+        [ChannelType.GuildCategory]:     'Categoría',
+        [ChannelType.GuildAnnouncement]: 'Anuncios',
         [ChannelType.GuildForum]:        'Foro',
         [ChannelType.GuildStageVoice]:   'Escenario',
         [ChannelType.GuildThread]:       'Hilo',
@@ -98,7 +123,7 @@ export async function onChannelCreate(channel) {
             { name: 'Creado por', value: executor ? `<@${executor.id}>` : 'Desconocido', inline: true }
         );
 
-    if (channel.parent) embed.addFields({ name: 'Categoria', value: channel.parent.name, inline: true });
+    if (channel.parent) embed.addFields({ name: 'Categoría', value: channel.parent.name, inline: true });
     await send(channel.guild, embed);
 }
 
@@ -124,13 +149,13 @@ export async function onChannelUpdate(oldCh, newCh) {
         changes.push({ name: 'Nombre', value: `\`${oldCh.name}\` -> \`${newCh.name}\``, inline: false });
 
     if (oldCh.topic !== newCh.topic)
-        changes.push({ name: 'Descripcion', value: `${oldCh.topic || '-'} -> ${newCh.topic || '-'}`, inline: false });
+        changes.push({ name: 'Descripción', value: `\`${oldCh.topic || '-'}\` -> \`${newCh.topic || '-'}\``, inline: false });
 
     if (oldCh.rateLimitPerUser !== newCh.rateLimitPerUser)
         changes.push({ name: 'Slowmode', value: `${oldCh.rateLimitPerUser}s -> ${newCh.rateLimitPerUser}s`, inline: true });
 
     if (oldCh.nsfw !== newCh.nsfw)
-        changes.push({ name: 'NSFW', value: `${oldCh.nsfw} -> ${newCh.nsfw}`, inline: true });
+        changes.push({ name: 'NSFW', value: `${oldCh.nsfw ? 'Sí' : 'No'} -> ${newCh.nsfw ? 'Sí' : 'No'}`, inline: true });
 
     if (!changes.length) return;
 
@@ -195,8 +220,8 @@ export async function onRoleUpdate(oldRole, newRole) {
 export async function onMessageDelete(message) {
     if (!message.guild || message.partial || message.author?.bot) return;
 
-    const executor = await getAuditUser(message.guild, AuditLogEvent.MessageDelete, message.author?.id);
-    const content  = message.content ? `\`\`\`\n${message.content.slice(0, 1000)}\n\`\`\`` : '(sin texto / solo adjuntos)';
+    const executor = await getAuditUser(message.guild, AuditLogEvent.MessageDelete, message.id);
+    const content  = message.content ? `\`\`\`\n${message.content.slice(0, 1000)}\n\`\`\`` : '(sin texto o solo adjuntos)';
 
     const embed = base('Mensaje Eliminado', message.guild)
         .addFields(
@@ -217,7 +242,7 @@ export async function onGuildBanAdd(ban) {
         .addFields(
             { name: 'Usuario',     value: `<@${ban.user.id}> (\`${ban.user.username}\`)`,    inline: true },
             { name: 'Baneado por', value: executor ? `<@${executor.id}>` : 'Desconocido',    inline: true },
-            { name: 'Razon',       value: ban.reason || 'Sin especificar',                    inline: false }
+            { name: 'Razón',       value: ban.reason || 'Sin especificar',                    inline: false }
         );
     await send(ban.guild, embed);
 }
