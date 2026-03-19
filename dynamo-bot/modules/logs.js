@@ -14,11 +14,12 @@ function send(guild, embed) {
     if (ch) ch.send({ embeds: [embed] }).catch(() => {});
 }
 
-function base(color, title, guild) {
+// 🔹 Modificado: Ignora colores de otros eventos y fuerza el ROJO siempre.
+function base(title, guild) {
     return new EmbedBuilder()
-        .setColor(color)
-        .setTitle(title)
-        .setFooter({ text: guild.name, iconURL: guild.iconURL({ extension: 'png' }) ?? undefined })
+        .setColor('#ED4245')
+        .setTitle(`🛑 ${title}`)
+        .setFooter({ text: `Logs • ${guild.name}`, iconURL: guild.iconURL({ extension: 'png' }) ?? undefined })
         .setTimestamp();
 }
 
@@ -72,7 +73,7 @@ export async function onChannelCreate(channel) {
     if (!channel.guild) return;
     const executor = await getAuditUser(channel.guild, AuditLogEvent.ChannelCreate, channel.id);
 
-    const embed = base('#57F287', 'Canal Creado', channel.guild)
+    const embed = base('Canal Creado', channel.guild)
         .addFields(
             { name: 'Canal',      value: `<#${channel.id}> (\`${channel.name}\`)`,      inline: true },
             { name: 'Tipo',       value: channelTypeName(channel.type),                  inline: true },
@@ -87,7 +88,7 @@ export async function onChannelDelete(channel) {
     if (!channel.guild) return;
     const executor = await getAuditUser(channel.guild, AuditLogEvent.ChannelDelete, channel.id);
 
-    const embed = base('#ED4245', 'Canal Eliminado', channel.guild)
+    const embed = base('Canal Eliminado', channel.guild)
         .addFields(
             { name: 'Canal',         value: `\`#${channel.name}\``,                           inline: true },
             { name: 'Tipo',          value: channelTypeName(channel.type),                     inline: true },
@@ -131,7 +132,7 @@ export async function onChannelUpdate(oldCh, newCh) {
     if (!changes.length) return;
 
     const executor = await getAuditUser(newCh.guild, AuditLogEvent.ChannelUpdate, newCh.id);
-    const embed    = base('#FEE75C', 'Canal Modificado', newCh.guild)
+    const embed    = base('Canal Modificado', newCh.guild)
         .setDescription(`**Canal:** <#${newCh.id}> (\`${newCh.name}\`)`)
         .addFields(...changes);
 
@@ -144,7 +145,7 @@ export async function onChannelUpdate(oldCh, newCh) {
 export async function onRoleCreate(role) {
     const executor = await getAuditUser(role.guild, AuditLogEvent.RoleCreate, role.id);
 
-    const embed = base('#57F287', 'Rol Creado', role.guild)
+    const embed = base('Rol Creado', role.guild)
         .addFields(
             { name: 'Rol',        value: `<@&${role.id}> (\`${role.name}\`)`,             inline: true },
             { name: 'Color',      value: role.hexColor || 'Por defecto',                   inline: true },
@@ -157,7 +158,7 @@ export async function onRoleCreate(role) {
 export async function onRoleDelete(role) {
     const executor = await getAuditUser(role.guild, AuditLogEvent.RoleDelete, role.id);
 
-    const embed = base('#ED4245', 'Rol Eliminado', role.guild)
+    const embed = base('Rol Eliminado', role.guild)
         .addFields(
             { name: 'Rol',           value: `\`${role.name}\``,                               inline: true },
             { name: 'Color',         value: role.hexColor || 'Por defecto',                    inline: true },
@@ -189,7 +190,7 @@ export async function onRoleUpdate(oldRole, newRole) {
     if (!changes.length) return;
 
     const executor = await getAuditUser(newRole.guild, AuditLogEvent.RoleUpdate, newRole.id);
-    const embed    = base('#FEE75C', 'Rol Modificado', newRole.guild)
+    const embed    = base('Rol Modificado', newRole.guild)
         .setDescription(`**Rol:** <@&${newRole.id}> (\`${newRole.name}\`)`)
         .addFields(...changes);
 
@@ -220,7 +221,7 @@ export async function onGuildUpdate(oldGuild, newGuild) {
     if (!changes.length) return;
 
     const executor = await getAuditUser(newGuild, AuditLogEvent.GuildUpdate);
-    const embed    = base('#FEE75C', 'Servidor Modificado', newGuild)
+    const embed    = base('Servidor Modificado', newGuild)
         .addFields(...changes);
 
     if (executor) embed.addFields({ name: 'Modificado por', value: `<@${executor.id}>`, inline: true });
@@ -241,7 +242,7 @@ export async function onGuildMemberUpdate(oldMember, newMember) {
     if (addedRoles.size)   fields.push({ name: 'Roles Añadidos',  value: addedRoles.map(r => `<@&${r.id}>`).join(', '),   inline: false });
     if (removedRoles.size) fields.push({ name: 'Roles Removidos', value: removedRoles.map(r => `<@&${r.id}>`).join(', '), inline: false });
 
-    const embed = base('#5865F2', 'Roles de Miembro Actualizados', newMember.guild)
+    const embed = base('Roles de Miembro Actualizados', newMember.guild)
         .setDescription(`**Miembro:** <@${newMember.id}> (\`${newMember.user.username}\`)`)
         .addFields(...fields);
 
@@ -254,7 +255,7 @@ export async function onGuildMemberUpdate(oldMember, newMember) {
 export async function onGuildBanAdd(ban) {
     const executor = await getAuditUser(ban.guild, AuditLogEvent.MemberBanAdd, ban.user.id);
 
-    const embed = base('#ED4245', 'Miembro Baneado', ban.guild)
+    const embed = base('Miembro Baneado', ban.guild)
         .addFields(
             { name: 'Usuario',     value: `<@${ban.user.id}> (\`${ban.user.username}\`)`,    inline: true },
             { name: 'Baneado por', value: executor ? `<@${executor.id}>` : 'Desconocido',    inline: true },
@@ -269,7 +270,7 @@ export async function onGuildBanAdd(ban) {
 export async function onNewBot(member) {
     const executor = await getAuditUser(member.guild, AuditLogEvent.BotAdd, member.id);
 
-    const embed = base('#5865F2', 'Nuevo Bot Añadido', member.guild)
+    const embed = base('Nuevo Bot Añadido', member.guild)
         .addFields(
             { name: 'Bot',        value: `<@${member.id}> (\`${member.user.username}\`)`,   inline: true },
             { name: 'Añadido por', value: executor ? `<@${executor.id}>` : 'Desconocido',   inline: true }
@@ -281,14 +282,13 @@ export async function onNewBot(member) {
 // ─── Mensajes Eliminados ────────────────────────────────────────────
 
 export async function onMessageDelete(message) {
-    if (!message.guild) return;
-    if (message.partial) return;
-    if (message.author?.bot) return;
+    if (!message.guild || message.partial || message.author?.bot) return;
 
     const executor = await getAuditUser(message.guild, AuditLogEvent.MessageDelete, message.author?.id);
-    const content  = message.content ? message.content.slice(0, 1000) : '(sin texto / solo adjuntos)';
+    // 🔹 Modificado: Ahora envuelve el mensaje en un bloque de código markdown para mejor lectura
+    const content  = message.content ? `\`\`\`\n${message.content.slice(0, 1000)}\n\`\`\`` : '(sin texto / solo adjuntos)';
 
-    const embed = base('#ED4245', 'Mensaje Eliminado', message.guild)
+    const embed = base('Mensaje Eliminado', message.guild)
         .addFields(
             { name: 'Canal',    value: `<#${message.channelId}>`,                             inline: true },
             { name: 'Autor',    value: message.author ? `<@${message.author.id}>` : 'Desconocido', inline: true },
