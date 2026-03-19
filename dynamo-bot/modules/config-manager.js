@@ -4,7 +4,7 @@ import { getDB } from '../database/db.js';
 const cache = new Map();
 
 export async function loadAllGuildConfigs(guilds) {
-    const promises = [...guilds.values()].map(guild => initGuildConfig(guild.id));
+    const promises = Array.from(guilds.values()).map(guild => initGuildConfig(guild.id));
     await Promise.allSettled(promises);
     console.log(`[OK] Configuraciones cargadas para ${guilds.size} servidor(es)`);
 }
@@ -15,14 +15,14 @@ export async function initGuildConfig(guildId) {
 
         const db = getDB();
 
-        // 🔹 Asegura que exista en DB
-        await db.run(
-            'INSERT OR IGNORE INTO guild_configs (guild_id) VALUES (?)',
+        // 🔹 Asegura que exista en DB (Adaptado a PostgreSQL)
+        await db.none(
+            'INSERT INTO guild_configs (guild_id) VALUES ($1) ON CONFLICT (guild_id) DO NOTHING',
             [guildId]
         );
 
-        const row = await db.get(
-            'SELECT * FROM guild_configs WHERE guild_id = ?',
+        const row = await db.oneOrNone(
+            'SELECT * FROM guild_configs WHERE guild_id = $1',
             [guildId]
         );
 
@@ -46,14 +46,14 @@ export async function getConfig(guildId) {
         const db = getDB();
 
         // 🔹 Asegura existencia en DB (clave para Railway)
-        await db.run(
-            'INSERT OR IGNORE INTO guild_configs (guild_id) VALUES (?)',
+        await db.none(
+            'INSERT INTO guild_configs (guild_id) VALUES ($1) ON CONFLICT (guild_id) DO NOTHING',
             [guildId]
         );
 
         // 🔹 Obtiene desde DB
-        const row = await db.get(
-            'SELECT * FROM guild_configs WHERE guild_id = ?',
+        const row = await db.oneOrNone(
+            'SELECT * FROM guild_configs WHERE guild_id = $1',
             [guildId]
         );
 
@@ -85,20 +85,20 @@ export async function setConfig(guildId, field, value) {
             throw new Error(`Campo inválido: ${field}`);
         }
 
-        await db.run(
+        await db.none(
             `UPDATE guild_configs 
-             SET ${field} = ?, updated_at = CURRENT_TIMESTAMP 
-             WHERE guild_id = ?`,
+             SET ${field} = $1, updated_at = CURRENT_TIMESTAMP 
+             WHERE guild_id = $2`,
             [value, guildId]
         );
 
         // 🔹 Refresca cache
-        const row = await db.get(
-            'SELECT * FROM guild_configs WHERE guild_id = ?',
+        const row = await db.oneOrNone(
+            'SELECT * FROM guild_configs WHERE guild_id = $1',
             [guildId]
         );
 
-        cache.set(guildId, row);
+        if (row) cache.set(guildId, row);
 
     } catch (err) {
         console.error('Error en setConfig:', err);
