@@ -52,7 +52,7 @@ async function send(guild, embed) {
 function base(title, guild) {
   return new EmbedBuilder()
     .setColor('#ED4245') // Rojo estético
-    .setTitle(`🛑 ${title}`)
+    .setTitle(`${title}`)
     .setFooter({ 
       text: `Logs • ${guild.name}`, 
       iconURL: guild.iconURL({ extension: 'png' }) ?? undefined 
