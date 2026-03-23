@@ -51,8 +51,8 @@ export async function handleMemberJoin(member) {
   // --- Registro en Base de Datos ---
   try {
     const db = getDB();
-    await db.run(
-      'INSERT OR IGNORE INTO users (user_id, guild_id, username) VALUES (?, ?, ?)',
+    await db.none(
+      'INSERT INTO users (user_id, guild_id, username) VALUES ($1, $2, $3) ON CONFLICT (user_id, guild_id) DO NOTHING',
       [member.id, member.guild.id, member.user.username]
     );
   } catch (err) {
