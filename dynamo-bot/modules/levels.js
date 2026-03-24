@@ -47,17 +47,17 @@ export async function handleLevelup(message, config) {
   try {
     if (!message || !message.guild || !message.member || message.author.bot) return;
 
-    // ⏱️ Anti-spam
+    // ⏱️ Anti-spam: 1 mensaje por usuario cada 5 segundos
     const now = Date.now();
-    const lastXp = cooldowns.get(message.author.id) || 0;
+    const lastMsg = cooldowns.get(message.author.id) || 0;
 
-    if (now - lastXp < 15000) return;
+    if (now - lastMsg < 5000) return;
     cooldowns.set(message.author.id, now);
 
     const db = getDB();
 
-    // 🎯 XP controlado
-    const xpGain = 10;
+    // 🎯 Mensajes = 1 XP por mensaje
+    const xpGain = 1;
 
     const guildId = message.guild.id;
 
@@ -95,7 +95,7 @@ export async function handleLevelup(message, config) {
       }
 
       await levCh.send(
-        `🎉 **${message.author.username}** alcanzó el **Nivel ${newLevel}**.`
+        `🎉 **${message.author.username}** alcanzó el **Nivel ${newLevel}**! (${newTotalXp} XP totales)`
       ).catch(() => {});
 
     } else {
