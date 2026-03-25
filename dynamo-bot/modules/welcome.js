@@ -29,10 +29,10 @@ export async function handleMemberJoin(member) {
       if (channel && channel.isTextBased()) {
         const embed = new EmbedBuilder()
           .setColor('#1E90FF') // Azul brillante
-          .setTitle('¡Bienvenido al servidor!')
+          .setTitle('Bienvenido al servidor')
           .setDescription(
-            `Hola <@${member.id}>, nos alegra tenerte aquí.\n\n` +
-            `Eres el miembro número **${member.guild.memberCount}** de **${member.guild.name}**.`
+            `Hola ${member.user.username}, nos alegra tenerte aquí.\n\n` +
+            `Eres el miembro numero ${member.guild.memberCount} de ${member.guild.name}.`
           )
           .setThumbnail(member.user.displayAvatarURL({ size: 256, extension: 'png' }))
           .setFooter({
@@ -78,7 +78,7 @@ export async function handleMemberRemove(member) {
       const embed = new EmbedBuilder()
         .setColor('#FF4444') // Rojo suave
         .setTitle('Hasta luego')
-        .setDescription(`**${member.user.username}** ha abandonado el servidor.`)
+        .setDescription(`${member.user.username} ha abandonado el servidor.`)
         .setThumbnail(member.user.displayAvatarURL({ size: 256, extension: 'png' }))
         .setFooter({
           text: `Salida • ${member.guild.name}`,
@@ -87,6 +87,7 @@ export async function handleMemberRemove(member) {
         .setTimestamp();
 
       await channel.send({ embeds: [embed] });
+      console.log(`[${member.guild.name}] ${member.user.username} ha abandonado el servidor.`);
     }
   } catch (err) {
     console.error(`[${member.guild.name}] Error enviando despedida:`, err.message);
