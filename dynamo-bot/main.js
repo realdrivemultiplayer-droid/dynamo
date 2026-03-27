@@ -218,7 +218,7 @@ async function handleConfigCommand(interaction) {
   const sub = interaction.options.getSubcommand();
   const guildId = interaction.guildId;
 
-  if (!guildId) return interaction.editReply('Este comando solo funciona dentro de un servidor.');
+  if (!guildId) return interaction.editReply('✉ Este comando solo funciona dentro de un servidor.');
 
   try {
     // ── Ver ──
