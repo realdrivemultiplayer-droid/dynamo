@@ -202,13 +202,13 @@ async function handleIACommand(interaction) {
     await setConfig(interaction.guildId, 'ia_enabled', enabled);
     await interaction.reply({
       content: enabled
-        ? '✅ Asistente de IA activado en este servidor.'
-        : '✅ Asistente de IA desactivado en este servidor.',
+        ? 'Asistente de IA activado en este servidor.'
+        : 'Asistente de IA desactivado en este servidor.',
       ephemeral: true
     });
   } catch (error) {
     console.error('[DB ERROR] Fallo al guardar IA:', error);
-    await interaction.reply({ content: '❌ Error al guardar en la base de datos.', ephemeral: true });
+    await interaction.reply({ content: 'Parece que hubo un error al guardar en la base de datos.', ephemeral: true });
   }
 }
 
@@ -218,7 +218,7 @@ async function handleConfigCommand(interaction) {
   const sub = interaction.options.getSubcommand();
   const guildId = interaction.guildId;
 
-  if (!guildId) return interaction.editReply('❌ Este comando solo funciona dentro de un servidor.');
+  if (!guildId) return interaction.editReply('Este comando solo funciona dentro de un servidor.');
 
   try {
     // ── Ver ──
@@ -266,7 +266,7 @@ async function handleConfigCommand(interaction) {
         'INSERT INTO level_roles (guild_id, role_id, xp_required) VALUES ($1, $2, $3) ON CONFLICT(guild_id, role_id) DO UPDATE SET xp_required = excluded.xp_required',
         [guildId, roleId, xp]
       );
-      return interaction.editReply(`✅ Rol <@&${roleId}> configurado para **${xp} XP totales**.`);
+      return interaction.editReply(`Rol <@&${roleId}> configurado para **${xp} XP totales**.`);
     }
 
     // ── music (canal opcional) ──
@@ -275,7 +275,7 @@ async function handleConfigCommand(interaction) {
       if (ch) {
         console.log(`[DB DEBUG] /config music -> Guardando music_channel_id: ${ch.id}`);
         await setConfig(guildId, 'music_channel_id', ch.id);
-        return interaction.editReply(`✅ Canal de musica configurado: <#${ch.id}>.`);
+        return interaction.editReply(`Canal de musica configurado: <#${ch.id}>.`);
       }
       return interaction.editReply('Usa `/config music channel:#canal` para configurar el canal de musica.');
     }
@@ -298,17 +298,17 @@ async function handleConfigCommand(interaction) {
     if (!field) return;
 
     if (!value) {
-      return interaction.editReply(`❌ Valor no recibido para **${sub}**. Asegúrate de seleccionar la opción correctamente.`);
+      return interaction.editReply(`Valor no recibido para **${sub}**. Asegúrate de seleccionar la opción correctamente.`);
     }
 
     console.log(`[DB DEBUG] /config ${sub} -> Campo: '${field}', Valor: '${value}', Guild: '${guildId}'`);
 
     await setConfig(guildId, field, value);
-    await interaction.editReply(`✅ **${sub}** actualizado correctamente.`);
+    await interaction.editReply(`**${sub}** actualizado correctamente.`);
 
   } catch (error) {
     console.error(`[DB ERROR] Ocurrió un error en /config ${sub}:`, error);
-    await interaction.editReply(`❌ Hubo un problema al intentar guardar la configuración en la base de datos.`);
+    await interaction.editReply(`Hubo un problema al intentar guardar la configuración en la base de datos.`);
   }
 }
 
