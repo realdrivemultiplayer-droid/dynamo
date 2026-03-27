@@ -33,7 +33,10 @@ async function updateLevelRole(member, guildId, oldLevel, newLevel) {
       [guildId]
     ).catch(() => []);
 
-    if (!levelRoles.length) return;
+    if (!levelRoles.length) {
+      console.log(`[LEVELS] No hay roles de nivel configurados en ${guildId}`);
+      return;
+    }
 
     // Encontrar el rol del nivel anterior
     const oldLevelRole = levelRoles.find(lr => lr.level === oldLevel);
@@ -57,9 +60,23 @@ async function updateLevelRole(member, guildId, oldLevel, newLevel) {
 
 /**
  * Envía un mensaje profesional de subida de nivel
+ * SOLO si el canal de niveles está configurado
  */
-async function sendLevelUpMessage(channel, member, oldLevel, newLevel, totalXp) {
+async function sendLevelUpMessage(guild, member, oldLevel, newLevel, totalXp, levelsChannelId) {
   try {
+    // Si no hay canal configurado, no enviar mensaje
+    if (!levelsChannelId) {
+      console.log(`[LEVELS] Canal de niveles no configurado en ${guild.id}`);
+      return;
+    }
+
+    // Obtener el canal
+    const levelChannel = guild.channels.cache.get(levelsChannelId);
+    if (!levelChannel || !levelChannel.isTextBased()) {
+      console.warn(`[LEVELS] Canal de niveles ${levelsChannelId} no existe o no es de texto`);
+      return;
+    }
+
     const nextLevelXp = getXpForNextLevel(newLevel);
     const xpProgress = totalXp - (newLevel * 100);
     const xpNeeded = nextLevelXp - (newLevel * 100);
@@ -76,7 +93,7 @@ XP Total: ${totalXp}
 ¡Sigue escribiendo para alcanzar el siguiente nivel!
     `.trim();
 
-    await channel.send(message).catch(err => {
+    await levelChannel.send(message).catch(err => {
       console.warn('[LEVELS] No se pudo enviar mensaje de nivel:', err.message);
     });
   } catch (err) {
@@ -86,6 +103,7 @@ XP Total: ${totalXp}
 
 export async function handleLevelup(message, config) {
   try {
+    // Validaciones básicas
     if (!message || !message.guild || !message.member || message.author.bot) return;
 
     // Anti-spam: 1 mensaje por usuario cada 5 segundos
@@ -122,7 +140,7 @@ export async function handleLevelup(message, config) {
     const oldLevel = getLevelFromXp(oldTotalXp);
     const newLevel = getLevelFromXp(newTotalXp);
 
-    // Actualizar XP en BD
+    // Actualizar XP en BD (siempre, sin importar si hay cambio de nivel)
     await db.none(
       'UPDATE users SET xp = $1, total_xp = $2 WHERE user_id = $3 AND guild_id = $4',
       [newTotalXp % 100, newTotalXp, userId, guildId]
@@ -130,21 +148,20 @@ export async function handleLevelup(message, config) {
 
     // Si hay cambio de nivel
     if (newLevel > oldLevel) {
-      console.log(`[LEVELS] ${message.author.username} subió de Nivel ${oldLevel} a ${newLevel}`);
+      console.log(`[LEVELS] ${message.author.username} subió de Nivel ${oldLevel} a ${newLevel} en ${message.guild.name}`);
 
-      // Actualizar roles
+      // Actualizar roles (siempre, aunque no haya canal configurado)
       await updateLevelRole(message.member, guildId, oldLevel, newLevel);
 
-      // Enviar mensaje de subida de nivel
-      let levelChannel = message.channel;
-      if (config?.levels_channel_id) {
-        const ch = message.guild.channels.cache.get(config.levels_channel_id);
-        if (ch && ch.isTextBased()) {
-          levelChannel = ch;
-        }
-      }
-
-      await sendLevelUpMessage(levelChannel, message.member, oldLevel, newLevel, newTotalXp);
+      // Enviar mensaje SOLO si el canal está configurado
+      await sendLevelUpMessage(
+        message.guild,
+        message.member,
+        oldLevel,
+        newLevel,
+        newTotalXp,
+        config?.levels_channel_id
+      );
     }
   } catch (error) {
     console.error('[LEVELS] Error en handleLevelup:', error);
