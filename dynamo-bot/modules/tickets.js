@@ -128,7 +128,7 @@ export async function handleTicketCreation(message) {
 
     const embed = new EmbedBuilder()
       .setColor('#3498db')
-      .setTitle('Ticket Abierto')
+      .setTitle('Open Ticket')
       .setThumbnail(message.author.displayAvatarURL({ size: 64, extension: 'png' }))
       .setDescription(
         `Hello <@${message.author.id}>, The moderators will come to help you soon.\n\n` +
