@@ -206,7 +206,7 @@ export async function onRoleUpdate(oldRole, newRole) {
   if (!changes.length) return;
 
   const executor = await getAuditUser(newRole.guild, AuditLogEvent.RoleUpdate, newRole.id);
-  const embed = base('Rol Modificado', newRole.guild)
+  const embed = base('Modified Role', newRole.guild)
     .setDescription(`**Rol:** <@&${newRole.id}> (\`${newRole.name}\`)`)
     .addFields(...changes);
 
@@ -225,11 +225,11 @@ export async function onMessageDelete(message) {
   const embed = base('Deleted Message', message.guild)
     .addFields(
       { name: 'Channel', value: `<#${message.channelId}>`, inline: true },
-      { name: 'Author', value: message.author ? `<@${message.author.id}>` : 'Desconocido', inline: true },
+      { name: 'Author', value: message.author ? `<@${message.author.id}>` : 'A stranger', inline: true },
       { name: 'Content', value: content, inline: false }
     );
 
-  if (executor) embed.addFields({ name: 'Eliminado por', value: `<@${executor.id}>`, inline: true });
+  if (executor) embed.addFields({ name: 'Removed by', value: `<@${executor.id}>`, inline: true });
   await send(message.guild, embed);
 }
 
