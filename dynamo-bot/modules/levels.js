@@ -34,7 +34,7 @@ async function updateLevelRole(member, guildId, oldLevel, newLevel) {
     ).catch(() => []);
 
     if (!levelRoles.length) {
-      console.log(`[LEVELS] No hay roles de nivel configurados en ${guildId}`);
+      console.log(`[LEVELS] There are no level roles configured in ${guildId}`);
       return;
     }
 
@@ -42,7 +42,7 @@ async function updateLevelRole(member, guildId, oldLevel, newLevel) {
     const oldLevelRole = levelRoles.find(lr => lr.level === oldLevel);
     if (oldLevelRole && member.roles.cache.has(oldLevelRole.role_id)) {
       await member.roles.remove(oldLevelRole.role_id).catch(err => {
-        console.warn(`[LEVELS] No se pudo quitar rol ${oldLevelRole.role_id}:`, err.message);
+        console.warn(`[LEVELS] Could not remove role ${oldLevelRole.role_id}:`, err.message);
       });
     }
 
@@ -50,11 +50,11 @@ async function updateLevelRole(member, guildId, oldLevel, newLevel) {
     const newLevelRole = levelRoles.find(lr => lr.level === newLevel);
     if (newLevelRole && !member.roles.cache.has(newLevelRole.role_id)) {
       await member.roles.add(newLevelRole.role_id).catch(err => {
-        console.warn(`[LEVELS] No se pudo asignar rol ${newLevelRole.role_id}:`, err.message);
+        console.warn(`[LEVELS] Could not assign role ${newLevelRole.role_id}:`, err.message);
       });
     }
   } catch (err) {
-    console.error('[LEVELS] Error en updateLevelRole:', err);
+    console.error('[LEVELS] Error in updateLevelRole:', err);
   }
 }
 
@@ -66,14 +66,14 @@ async function sendLevelUpMessage(guild, member, oldLevel, newLevel, totalXp, le
   try {
     // Si no hay canal configurado, no enviar mensaje
     if (!levelsChannelId) {
-      console.log(`[LEVELS] Canal de niveles no configurado en ${guild.id}`);
+      console.log(`[LEVELS] Levels channel not configured in ${guild.id}`);
       return;
     }
 
     // Obtener el canal
     const levelChannel = guild.channels.cache.get(levelsChannelId);
     if (!levelChannel || !levelChannel.isTextBased()) {
-      console.warn(`[LEVELS] Canal de niveles ${levelsChannelId} no existe o no es de texto`);
+      console.warn(`[LEVELS] Levels Channel ${levelsChannelId} does not exist or is not text`);
       return;
     }
 
@@ -82,22 +82,22 @@ async function sendLevelUpMessage(guild, member, oldLevel, newLevel, totalXp, le
     const xpNeeded = nextLevelXp - (newLevel * 100);
 
     const message = `
-**Felicidades ${member.user.username}!**
+**Congratulations ${member.user.username}!**
 
-Has alcanzado el **Nivel ${newLevel}** (desde Nivel ${oldLevel})
+You have reached the **Level ${newLevel}** (from Level ${oldLevel})
 
-**Progreso:**
-XP Actual: ${xpProgress} / ${xpNeeded}
-XP Total: ${totalXp}
+**Progress:**
+Current XP: ${xpProgress} / ${xpNeeded}
+Total XP: ${totalXp}
 
-¡Sigue escribiendo para alcanzar el siguiente nivel!
+Keep writing to reach the next level!
     `.trim();
 
     await levelChannel.send(message).catch(err => {
-      console.warn('[LEVELS] No se pudo enviar mensaje de nivel:', err.message);
+      console.warn('[LEVELS] Level message could not be sent:', err.message);
     });
   } catch (err) {
-    console.error('[LEVELS] Error en sendLevelUpMessage:', err);
+    console.error('[LEVELS] Error in sendLevelUpMessage:', err);
   }
 }
 
@@ -117,7 +117,7 @@ export async function handleLevelup(message, config) {
     const userId = message.author.id;
 
     // 1 XP por mensaje
-    const xpGain = 1;
+    const xpGain = 100;
 
     // Obtener usuario actual
     let user = await db.oneOrNone(
@@ -130,7 +130,7 @@ export async function handleLevelup(message, config) {
       await db.none(
         'INSERT INTO users (user_id, guild_id, username, level, xp, total_xp) VALUES ($1, $2, $3, 0, $4, $5)',
         [userId, guildId, message.author.username, xpGain, xpGain]
-      ).catch(err => console.error('[LEVELS] Error creando usuario:', err));
+      ).catch(err => console.error('[LEVELS] Error creating user:', err));
       return;
     }
 
@@ -144,11 +144,11 @@ export async function handleLevelup(message, config) {
     await db.none(
       'UPDATE users SET xp = $1, total_xp = $2 WHERE user_id = $3 AND guild_id = $4',
       [newTotalXp % 100, newTotalXp, userId, guildId]
-    ).catch(err => console.error('[LEVELS] Error actualizando XP:', err));
+    ).catch(err => console.error('[LEVELS] Error updating XP:', err));
 
     // Si hay cambio de nivel
     if (newLevel > oldLevel) {
-      console.log(`[LEVELS] ${message.author.username} subió de Nivel ${oldLevel} a ${newLevel} en ${message.guild.name}`);
+      console.log(`[LEVELS] ${message.author.username} leveled up ${oldLevel} a ${newLevel} en ${message.guild.name}`);
 
       // Actualizar roles (siempre, aunque no haya canal configurado)
       await updateLevelRole(message.member, guildId, oldLevel, newLevel);
@@ -164,7 +164,7 @@ export async function handleLevelup(message, config) {
       );
     }
   } catch (error) {
-    console.error('[LEVELS] Error en handleLevelup:', error);
+    console.error('[LEVELS] Error in handleLevelup:', error);
   }
 }
 
@@ -176,7 +176,7 @@ export async function handleModeration(message, config) {
     if (!target) return;
 
     if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-      message.reply('No tienes permisos para advertir usuarios.').catch(() => {});
+      message.reply('You do not have permission to warn users.').catch(() => {});
       return;
     }
 
@@ -205,10 +205,10 @@ export async function handleModeration(message, config) {
     message.reply(`${target} ha recibido una advertencia (${warnings}/3).`).catch(() => {});
 
     if (warnings >= 3) {
-      await target.ban({ reason: 'Exceso de advertencias' }).catch(() => {});
-      message.reply(`${target} ha sido baneado por exceso de advertencias.`).catch(() => {});
+      await target.ban({ reason: 'Too many warnings' }).catch(() => {});
+      message.reply(`${target} has been banned for excessive warnings.`).catch(() => {});
     }
   } catch (error) {
-    console.error('[LEVELS] Error en moderacion:', error);
+    console.error('[LEVELS] Moderation error:', error);
   }
 }
