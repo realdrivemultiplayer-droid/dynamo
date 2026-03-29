@@ -1,214 +1,200 @@
-import { PermissionsBitField } from 'discord.js';
+import { PermissionsBitField, EmbedBuilder } from 'discord.js';
 import { getDB } from '../database/db.js';
 
 // 🔒 Anti-spam
 const cooldowns = new Map();
 
 /**
- * Calcula el nivel basado en XP total
- * Fórmula: nivel = floor(totalXp / 100)
- */
+ * Calcula el nivel basado en XP total
+ */
 function getLevelFromXp(totalXp) {
-  return Math.floor(totalXp / 100);
+  return Math.floor(totalXp / 100);
 }
 
 /**
- * Calcula el XP necesario para alcanzar el siguiente nivel
- */
+ * Calcula el XP necesario para alcanzar el siguiente nivel
+ */
 function getXpForNextLevel(currentLevel) {
-  return (currentLevel + 1) * 100;
+  return (currentLevel + 1) * 100;
 }
 
 /**
- * Actualiza los roles de nivel del usuario
- * Quita el rol anterior y asigna el nuevo
- */
+ * Actualiza los roles de nivel del usuario
+ */
 async function updateLevelRole(member, guildId, oldLevel, newLevel) {
-  try {
-    const db = getDB();
-    
-    // Obtener todos los roles de nivel configurados
-    const levelRoles = await db.any(
-      'SELECT * FROM level_roles WHERE guild_id = $1 ORDER BY level ASC',
-      [guildId]
-    ).catch(() => []);
+  try {
+    const db = getDB();
+    
+    const levelRoles = await db.any(
+      'SELECT * FROM level_roles WHERE guild_id = $1 ORDER BY level ASC',
+      [guildId]
+    ).catch(() => []);
 
-    if (!levelRoles.length) {
-      console.log(`[LEVELS] There are no level roles configured in ${guildId}`);
-      return;
-    }
+    if (!levelRoles.length) return;
 
-    // Encontrar el rol del nivel anterior
-    const oldLevelRole = levelRoles.find(lr => lr.level === oldLevel);
-    if (oldLevelRole && member.roles.cache.has(oldLevelRole.role_id)) {
-      await member.roles.remove(oldLevelRole.role_id).catch(err => {
-        console.warn(`[LEVELS] Could not remove role ${oldLevelRole.role_id}:`, err.message);
-      });
-    }
+    // Quitar rol del nivel anterior
+    const oldLevelRole = levelRoles.find(lr => lr.level === oldLevel);
+    if (oldLevelRole && member.roles.cache.has(oldLevelRole.role_id)) {
+      await member.roles.remove(oldLevelRole.role_id).catch(() => {});
+    }
 
-    // Encontrar y asignar el rol del nuevo nivel
-    const newLevelRole = levelRoles.find(lr => lr.level === newLevel);
-    if (newLevelRole && !member.roles.cache.has(newLevelRole.role_id)) {
-      await member.roles.add(newLevelRole.role_id).catch(err => {
-        console.warn(`[LEVELS] Could not assign role ${newLevelRole.role_id}:`, err.message);
-      });
-    }
-  } catch (err) {
-    console.error('[LEVELS] Error in updateLevelRole:', err);
-  }
+    // Asignar rol del nuevo nivel
+    const newLevelRole = levelRoles.find(lr => lr.level === newLevel);
+    if (newLevelRole && !member.roles.cache.has(newLevelRole.role_id)) {
+      await member.roles.add(newLevelRole.role_id).catch(err => {
+        console.warn(`[LEVELS] Error asignando rol: ${err.message}. Revisa la jerarquía del bot.`);
+      });
+    }
+  } catch (err) {
+    console.error('[LEVELS] Error en updateLevelRole:', err);
+  }
 }
 
 /**
- * Envía un mensaje profesional de subida de nivel
- * SOLO si el canal de niveles está configurado
- */
+ * Envía un mensaje profesional con EMBED (Color lateral y Avatar pequeño)
+ */
 async function sendLevelUpMessage(guild, member, oldLevel, newLevel, totalXp, levelsChannelId) {
-  try {
-    // Si no hay canal configurado, no enviar mensaje
-    if (!levelsChannelId) {
-      console.log(`[LEVELS] Levels channel not configured in ${guild.id}`);
-      return;
-    }
+  try {
+    if (!levelsChannelId) return;
 
-    // Obtener el canal
-    const levelChannel = guild.channels.cache.get(levelsChannelId);
-    if (!levelChannel || !levelChannel.isTextBased()) {
-      console.warn(`[LEVELS] Levels Channel ${levelsChannelId} does not exist or is not text`);
-      return;
-    }
+    const levelChannel = guild.channels.cache.get(levelsChannelId);
+    if (!levelChannel || !levelChannel.isTextBased()) return;
 
-    const nextLevelXp = getXpForNextLevel(newLevel);
-    const xpProgress = totalXp - (newLevel * 100);
-    const xpNeeded = nextLevelXp - (newLevel * 100);
+    const nextLevelXp = getXpForNextLevel(newLevel);
+    const xpProgress = totalXp - (newLevel * 100);
+    const xpNeeded = nextLevelXp - (newLevel * 100);
 
-    const message = `
-**Congratulations ${member.user.username}!**
+    // Diseño profesional del mensaje
+    const levelEmbed = new EmbedBuilder()
+      .setColor('#5865F2') // Color de la barra lateral (puedes cambiarlo a tu gusto)
+      .setAuthor({ 
+        name: `${member.user.username} ha subido de nivel`, 
+        iconURL: member.user.displayAvatarURL({ dynamic: true }) 
+      }) // Foto pequeña arriba a la izquierda con el nombre
+      .setTitle('✨ ¡Felicidades! ✨')
+      .setDescription(`¡Has alcanzado una nueva meta en **${guild.name}**!`)
+      .addFields(
+        { name: 'Nivel', value: `\`${oldLevel}\` ➔ **${newLevel}**`, inline: true },
+        { name: 'XP Total', value: `\`${totalXp}\``, inline: true },
+        { name: 'Progreso', value: `**${xpProgress}** / **${xpNeeded}** XP para el nivel ${newLevel + 1}` }
+      )
+      .setTimestamp()
+      .setFooter({ text: 'Sigue participando para desbloquear más recompensas' });
 
-You have reached the **Level ${newLevel}** (from Level ${oldLevel})
+    await levelChannel.send({ 
+      content: `¡Enhorabuena ${member}!`, // Menciona al usuario fuera del cuadro para que le llegue la notificación
+      embeds: [levelEmbed] 
+    }).catch(() => {});
 
-**Progress:**
-Current XP: ${xpProgress} / ${xpNeeded}
-Total XP: ${totalXp}
-
-Keep writing to reach the next level!
-    `.trim();
-
-    await levelChannel.send(message).catch(err => {
-      console.warn('[LEVELS] Level message could not be sent:', err.message);
-    });
-  } catch (err) {
-    console.error('[LEVELS] Error in sendLevelUpMessage:', err);
-  }
+  } catch (err) {
+    console.error('[LEVELS] Error en sendLevelUpMessage:', err);
+  }
 }
 
 export async function handleLevelup(message, config) {
-  try {
-    // Validaciones básicas
-    if (!message || !message.guild || !message.member || message.author.bot) return;
+  try {
+    if (!message || !message.guild || !message.member || message.author.bot) return;
 
-    // Anti-spam: 1 mensaje por usuario cada 5 segundos
-    const now = Date.now();
-    const lastMsg = cooldowns.get(message.author.id) || 0;
-    if (now - lastMsg < 5000) return;
-    cooldowns.set(message.author.id, now);
+    // Anti-spam: 5 segundos
+    const now = Date.now();
+    const lastMsg = cooldowns.get(message.author.id) || 0;
+    if (now - lastMsg < 5000) return;
+    cooldowns.set(message.author.id, now);
 
-    const db = getDB();
-    const guildId = message.guild.id;
-    const userId = message.author.id;
+    const db = getDB();
+    const guildId = message.guild.id;
+    const userId = message.author.id;
+    const xpGain = 100; // Esto asegura que suba al nivel 1 al primer mensaje
 
-    // 1 XP por mensaje
-    const xpGain = 100;
+    let user = await db.oneOrNone(
+      'SELECT * FROM users WHERE user_id = $1 AND guild_id = $2',
+      [userId, guildId]
+    ).catch(() => null);
 
-    // Obtener usuario actual
-    let user = await db.oneOrNone(
-      'SELECT * FROM users WHERE user_id = $1 AND guild_id = $2',
-      [userId, guildId]
-    ).catch(() => null);
+    // Si el usuario no existe en la DB
+    if (!user) {
+      await db.none(
+        'INSERT INTO users (user_id, guild_id, username, level, xp, total_xp) VALUES ($1, $2, $3, 0, 0, 0)',
+        [userId, guildId, message.author.username]
+      ).catch(err => console.error('[LEVELS] Error creando user:', err));
+      
+      user = { total_xp: 0, level: 0 };
+    }
 
-    // Si no existe, crear nuevo usuario
-    if (!user) {
-      await db.none(
-        'INSERT INTO users (user_id, guild_id, username, level, xp, total_xp) VALUES ($1, $2, $3, 0, $4, $5)',
-        [userId, guildId, message.author.username, xpGain, xpGain]
-      ).catch(err => console.error('[LEVELS] Error creating user:', err));
-      return;
-    }
+    const oldTotalXp = parseInt(user.total_xp) || 0;
+    const newTotalXp = oldTotalXp + xpGain;
+    const oldLevel = getLevelFromXp(oldTotalXp);
+    const newLevel = getLevelFromXp(newTotalXp);
 
-    // Calcular XP actual
-    const oldTotalXp = user.total_xp || 0;
-    const newTotalXp = oldTotalXp + xpGain;
-    const oldLevel = getLevelFromXp(oldTotalXp);
-    const newLevel = getLevelFromXp(newTotalXp);
+    // Actualizamos la base de datos con los nuevos valores
+    await db.none(
+      'UPDATE users SET xp = $1, total_xp = $2, level = $3 WHERE user_id = $4 AND guild_id = $5',
+      [newTotalXp % 100, newTotalXp, newLevel, userId, guildId]
+    ).catch(err => console.error('[LEVELS] Error actualizando XP:', err));
 
-    // Actualizar XP en BD (siempre, sin importar si hay cambio de nivel)
-    await db.none(
-      'UPDATE users SET xp = $1, total_xp = $2 WHERE user_id = $3 AND guild_id = $4',
-      [newTotalXp % 100, newTotalXp, userId, guildId]
-    ).catch(err => console.error('[LEVELS] Error updating XP:', err));
+    // Si hubo cambio de nivel
+    if (newLevel > oldLevel) {
+      console.log(`[LEVELS] ${message.author.username} subió al nivel ${newLevel} en ${message.guild.name}`);
 
-    // Si hay cambio de nivel
-    if (newLevel > oldLevel) {
-      console.log(`[LEVELS] ${message.author.username} leveled up ${oldLevel} a ${newLevel} en ${message.guild.name}`);
+      // 1. Intentar asignar/quitar ROLES
+      await updateLevelRole(message.member, guildId, oldLevel, newLevel);
 
-      // Actualizar roles (siempre, aunque no haya canal configurado)
-      await updateLevelRole(message.member, guildId, oldLevel, newLevel);
-
-      // Enviar mensaje SOLO si el canal está configurado
-      await sendLevelUpMessage(
-        message.guild,
-        message.member,
-        oldLevel,
-        newLevel,
-        newTotalXp,
-        config?.levels_channel_id
-      );
-    }
-  } catch (error) {
-    console.error('[LEVELS] Error in handleLevelup:', error);
-  }
+      // 2. Enviar el mensaje con EMBED bacano
+      await sendLevelUpMessage(
+        message.guild,
+        message.member,
+        oldLevel,
+        newLevel,
+        newTotalXp,
+        config?.levels_channel_id
+      );
+    }
+  } catch (error) {
+    console.error('[LEVELS] Error en handleLevelup:', error);
+  }
 }
 
 export async function handleModeration(message, config) {
-  try {
-    if (!message.content.startsWith('!warn')) return;
+  try {
+    if (!message.content.startsWith('!warn')) return;
 
-    const target = message.mentions.members.first();
-    if (!target) return;
+    const target = message.mentions.members.first();
+    if (!target) return;
 
-    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
-      message.reply('You do not have permission to warn users.').catch(() => {});
-      return;
-    }
+    if (!message.member.permissions.has(PermissionsBitField.Flags.ModerateMembers)) {
+      message.reply('No tienes permiso para advertir usuarios.').catch(() => {});
+      return;
+    }
 
-    const db = getDB();
-    const guildId = message.guild.id;
+    const db = getDB();
+    const guildId = message.guild.id;
 
-    let user = await db.oneOrNone(
-      'SELECT * FROM users WHERE user_id = $1 AND guild_id = $2',
-      [target.id, guildId]
-    ).catch(() => null);
+    let user = await db.oneOrNone(
+      'SELECT * FROM users WHERE user_id = $1 AND guild_id = $2',
+      [target.id, guildId]
+    ).catch(() => null);
 
-    const warnings = (user?.warnings || 0) + 1;
+    const warnings = (user?.warnings || 0) + 1;
 
-    if (!user) {
-      await db.none(
-        'INSERT INTO users (user_id, guild_id, username, warnings) VALUES ($1, $2, $3, $4)',
-        [target.id, guildId, target.user.username, warnings]
-      ).catch(() => {});
-    } else {
-      await db.none(
-        'UPDATE users SET warnings = $1 WHERE user_id = $2 AND guild_id = $3',
-        [warnings, target.id, guildId]
-      ).catch(() => {});
-    }
+    if (!user) {
+      await db.none(
+        'INSERT INTO users (user_id, guild_id, username, warnings) VALUES ($1, $2, $3, $4)',
+        [target.id, guildId, target.user.username, warnings]
+      ).catch(() => {});
+    } else {
+      await db.none(
+        'UPDATE users SET warnings = $1 WHERE user_id = $2 AND guild_id = $3',
+        [warnings, target.id, guildId]
+      ).catch(() => {});
+    }
 
-    message.reply(`${target} ha recibido una advertencia (${warnings}/3).`).catch(() => {});
+    message.reply(`${target} ha recibido una advertencia (${warnings}/3).`).catch(() => {});
 
-    if (warnings >= 3) {
-      await target.ban({ reason: 'Too many warnings' }).catch(() => {});
-      message.reply(`${target} has been banned for excessive warnings.`).catch(() => {});
-    }
-  } catch (error) {
-    console.error('[LEVELS] Moderation error:', error);
-  }
+    if (warnings >= 3) {
+      await target.ban({ reason: 'Exceso de advertencias' }).catch(() => {});
+      message.reply(`${target} ha sido baneado por acumular 3 advertencias.`).catch(() => {});
+    }
+  } catch (error) {
+    console.error('[LEVELS] Error en Moderación:', error);
+  }
 }
