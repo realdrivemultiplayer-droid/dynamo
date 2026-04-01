@@ -1,20 +1,20 @@
-import { Manager } from 'erela.js';
-import Spotify from 'erela.js-spotify';
 import { EmbedBuilder } from 'discord.js';
+import { joinVoiceChannel, createAudioPlayer, createAudioResource, AudioPlayerStatus, VoiceConnectionStatus, entersState, getVoiceConnection } from '@discordjs/voice';
+import playdl from 'play-dl';
 
-// ─── Manager global de Lavalink ──────────────────────────────────────
-let manager = null;
+// ─── Estado global por servidor ──────────────────────────────────────
+// Map<guildId, { connection, player, queue, volume, textChannelId, current }>
+const players = new Map();
 
 // ─── Helpers ─────────────────────────────────────────────────────────
 
-function formatDuration(ms) {
-  if (!ms || isNaN(ms)) return '0:00';
-  const totalSec = Math.floor(ms / 1000);
-  const hours    = Math.floor(totalSec / 3600);
-  const minutes  = Math.floor((totalSec % 3600) / 60);
-  const seconds  = totalSec % 60;
-  if (hours > 0) return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
-  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+function formatDuration(seconds) {
+  if (!seconds || isNaN(seconds)) return '0:00';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 function buildProgressBar(position, duration, length = 20) {
@@ -24,113 +24,26 @@ function buildProgressBar(position, duration, length = 20) {
   return '▬'.repeat(Math.max(progress - 1, 0)) + '🔘' + '▬'.repeat(remaining);
 }
 
-function getPlayer(guildId) {
-  return manager?.players.get(guildId) ?? null;
+function getState(guildId) {
+  return players.get(guildId) ?? null;
 }
 
-function createPlayer(client, voiceChannel, textChannel) {
-  return manager.create({
-    guild:   voiceChannel.guild.id,
-    voiceChannel: voiceChannel.id,
-    textChannel:  textChannel.id,
-    selfDeafen: true,
-    volume: 80
-  });
+function destroyState(guildId) {
+  const state = players.get(guildId);
+  if (!state) return;
+  try { state.player?.stop(true); } catch (_) {}
+  try { state.connection?.destroy(); } catch (_) {}
+  players.delete(guildId);
 }
 
-// ─── Inicialización del Manager ──────────────────────────────────────
+async function playNext(guildId, client) {
+  const state = getState(guildId);
+  if (!state) return;
 
-export async function initMusicManager(client) {
-  const plugins = [];
-
-  if (process.env.SPOTIFY_CLIENT_ID && process.env.SPOTIFY_CLIENT_SECRET) {
-    plugins.push(new Spotify({
-      clientID:     process.env.SPOTIFY_CLIENT_ID,
-      clientSecret: process.env.SPOTIFY_CLIENT_SECRET
-    }));
-    console.log('[MUSIC] Plugin de Spotify cargado.');
-  }
-
-  manager = new Manager({
-    nodes: [
-      {
-        host:       process.env.LAVALINK_HOST     || 'localhost',
-        port:       Number(process.env.LAVALINK_PORT)   || 2333,
-        password:   process.env.LAVALINK_PASSWORD  || 'youshallnotpass',
-        secure:     process.env.LAVALINK_SECURE === 'true',
-        identifier: 'dynamo-main',
-        retryAmount: 10,
-        retryDelay:  5000
-      }
-    ],
-    plugins,
-    send(id, payload) {
-      const guild = client.guilds.cache.get(id);
-      if (guild) guild.shard.send(payload);
-    }
-  });
-
-  // ── Eventos del nodo ──
-  manager.on('nodeConnect', node =>
-    console.log(`[LAVALINK] Nodo "${node.options.identifier}" conectado.`)
-  );
-  manager.on('nodeError', (node, error) =>
-    console.error(`[LAVALINK] Error en nodo "${node.options.identifier}":`, error.message)
-  );
-  manager.on('nodeDisconnect', node =>
-    console.warn(`[LAVALINK] Nodo "${node.options.identifier}" desconectado.`)
-  );
-
-  // ── Eventos de reproducción ──
-  manager.on('trackStart', (player, track) => {
-    const channel = client.channels.cache.get(player.textChannel);
-    if (!channel) return;
-
-    const embed = new EmbedBuilder()
-      .setColor('#1DB954')
-      .setTitle('🎶 Reproduciendo ahora')
-      .setDescription(`**[${track.title}](${track.uri})**`)
-      .addFields(
-        { name: '👤 Artista',   value: track.author   || 'Desconocido', inline: true },
-        { name: '⏱️ Duración',  value: track.isStream ? '🔴 En vivo' : formatDuration(track.duration), inline: true },
-        { name: '🔊 Volumen',   value: `${player.volume}%`, inline: true }
-      )
-      .setThumbnail(track.thumbnail || null)
-      .setFooter({ text: `Solicitado por ${track.requester?.tag ?? 'Desconocido'}` })
-      .setTimestamp();
-
-    channel.send({ embeds: [embed] }).catch(() => {});
-  });
-
-  manager.on('trackEnd', (player, track, payload) => {
-    if (payload.reason === 'REPLACED') return;
-    console.log(`[MUSIC] Pista terminada: ${track.title}`);
-  });
-
-  manager.on('trackError', (player, track, payload) => {
-    console.error(`[MUSIC] Error en pista "${track.title}":`, payload.error);
-    const channel = client.channels.cache.get(player.textChannel);
-    if (channel) {
-      channel.send({
-        embeds: [
-          new EmbedBuilder()
-            .setColor('#ED4245')
-            .setTitle('❌ Error de reproducción')
-            .setDescription(`No se pudo reproducir **${track.title}**.\nSaltando a la siguiente canción...`)
-        ]
-      }).catch(() => {});
-    }
-  });
-
-  manager.on('trackStuck', (player, track) => {
-    console.warn(`[MUSIC] Pista atascada: ${track.title}. Saltando...`);
-    player.stop();
-  });
-
-  manager.on('queueEnd', player => {
-    const channel = client.channels.cache.get(player.textChannel);
-    if (channel) {
-      channel.send({
+  if (state.queue.length === 0) {
+    const ch = client.channels.cache.get(state.textChannelId);
+    if (ch) {
+      ch.send({
         embeds: [
           new EmbedBuilder()
             .setColor('#5865F2')
@@ -139,13 +52,64 @@ export async function initMusicManager(client) {
         ]
       }).catch(() => {});
     }
-    player.destroy();
-  });
+    destroyState(guildId);
+    return;
+  }
 
-  // ── Reenviar eventos de voz de Discord al Manager ──
-  client.on('raw', data => manager.updateVoiceState(data));
+  const track = state.queue.shift();
+  state.current = track;
 
-  manager.init(client.user.id);
+  try {
+    const stream = await playdl.stream(track.url, { quality: 2 });
+    const resource = createAudioResource(stream.stream, {
+      inputType: stream.type,
+      inlineVolume: true
+    });
+    resource.volume?.setVolume(state.volume / 100);
+    state.resource = resource;
+    state.player.play(resource);
+
+    const ch = client.channels.cache.get(state.textChannelId);
+    if (ch) {
+      ch.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#1DB954')
+            .setTitle('🎶 Reproduciendo ahora')
+            .setDescription(`**[${track.title}](${track.url})**`)
+            .addFields(
+              { name: '👤 Artista',  value: track.author   || 'Desconocido', inline: true },
+              { name: '⏱️ Duración', value: formatDuration(track.durationSec), inline: true },
+              { name: '🔊 Volumen',  value: `${state.volume}%`, inline: true }
+            )
+            .setThumbnail(track.thumbnail || null)
+            .setFooter({ text: `Solicitado por ${track.requesterTag ?? 'Desconocido'}` })
+            .setTimestamp()
+        ]
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.error('[MUSIC] Error reproduciendo pista:', err);
+    const ch = client.channels.cache.get(state.textChannelId);
+    if (ch) {
+      ch.send({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#ED4245')
+            .setTitle('❌ Error de reproducción')
+            .setDescription(`No se pudo reproducir **${track.title}**.\nSaltando a la siguiente canción...`)
+        ]
+      }).catch(() => {});
+    }
+    playNext(guildId, client);
+  }
+}
+
+// ─── Inicialización del Manager ──────────────────────────────────────
+
+export async function initMusicManager(_client) {
+  console.log('[MUSIC] Sistema de música simple inicializado (sin Lavalink).');
+  return true;
 }
 
 // ─── Comandos ─────────────────────────────────────────────────────────
@@ -156,103 +120,143 @@ export async function handlePlay(interaction) {
     return interaction.reply({ content: '❌ Debes estar en un canal de voz para usar este comando.', ephemeral: true });
   }
 
-  if (!manager) {
-    return interaction.reply({ content: '❌ El sistema de música no está listo todavía. Inténtalo en unos segundos.', ephemeral: true });
-  }
-
   await interaction.deferReply();
 
   const query   = interaction.options.getString('query');
   const guildId = interaction.guildId;
+  const client  = interaction.client;
 
   try {
-    let player = getPlayer(guildId);
-    if (!player) {
-      player = createPlayer(interaction.client, voiceChannel, interaction.channel);
+    // Buscar en YouTube
+    let results;
+    try {
+      if (query.startsWith('http://') || query.startsWith('https://')) {
+        results = await playdl.search(query, { limit: 1 });
+        if (!results.length) {
+          // Intentar como URL directa de playlist/video
+          const info = await playdl.video_info(query).catch(() => null);
+          if (info) results = [info.video_details];
+        }
+      } else {
+        results = await playdl.search(query, { source: { youtube: 'video' }, limit: 5 });
+      }
+    } catch (searchErr) {
+      console.error('[MUSIC] Error en búsqueda:', searchErr);
+      results = [];
     }
 
-    const res = await manager.search(query, interaction.user);
+    if (!results || results.length === 0) {
+      return interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#FEE75C')
+            .setTitle('🔍 Sin resultados')
+            .setDescription(`No se encontraron resultados para: **${query}**`)
+        ]
+      });
+    }
 
-    switch (res.loadType) {
-      case 'LOAD_FAILED':
-        return interaction.editReply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor('#ED4245')
-              .setTitle('❌ Error al cargar')
-              .setDescription(`No se pudo cargar la canción: \`${res.exception?.message ?? 'Error desconocido'}\``)
-          ]
-        });
+    const video = results[0];
+    const track = {
+      title:       video.title  ?? 'Sin título',
+      url:         video.url    ?? video.link ?? '',
+      author:      video.channel?.name ?? video.music?.[0]?.artist ?? 'Desconocido',
+      durationSec: video.durationInSec ?? 0,
+      thumbnail:   video.thumbnails?.[0]?.url ?? null,
+      requesterTag: interaction.user.tag
+    };
 
-      case 'NO_MATCHES':
-        return interaction.editReply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor('#FEE75C')
-              .setTitle('🔍 Sin resultados')
-              .setDescription(`No se encontraron resultados para: **${query}**`)
-          ]
-        });
+    // Obtener o crear estado del servidor
+    let state = getState(guildId);
 
-      case 'PLAYLIST_LOADED': {
-        for (const track of res.tracks) {
-          track.requester = interaction.user;
-          player.queue.add(track);
-        }
-        const embed = new EmbedBuilder()
-          .setColor('#1DB954')
-          .setTitle('📋 Lista de reproducción añadida')
-          .setDescription(`**${res.playlist.name}**`)
+    if (!state) {
+      const connection = joinVoiceChannel({
+        channelId:      voiceChannel.id,
+        guildId:        guildId,
+        adapterCreator: voiceChannel.guild.voiceAdapterCreator,
+        selfDeaf:       true
+      });
+
+      const audioPlayer = createAudioPlayer();
+
+      connection.subscribe(audioPlayer);
+
+      // Esperar a que la conexión esté lista
+      try {
+        await entersState(connection, VoiceConnectionStatus.Ready, 10_000);
+      } catch {
+        connection.destroy();
+        return interaction.editReply({ content: '❌ No se pudo conectar al canal de voz. Inténtalo de nuevo.' });
+      }
+
+      state = {
+        connection,
+        player:        audioPlayer,
+        queue:         [],
+        volume:        80,
+        current:       null,
+        textChannelId: interaction.channelId,
+        resource:      null
+      };
+      players.set(guildId, state);
+
+      // Cuando termina una canción, reproducir la siguiente
+      audioPlayer.on(AudioPlayerStatus.Idle, () => {
+        playNext(guildId, client);
+      });
+
+      audioPlayer.on('error', err => {
+        console.error('[MUSIC] AudioPlayer error:', err);
+        playNext(guildId, client);
+      });
+
+      // Si la conexión se destruye externamente, limpiar estado
+      connection.on(VoiceConnectionStatus.Destroyed, () => {
+        players.delete(guildId);
+      });
+    }
+
+    // Añadir a la cola
+    state.queue.push(track);
+
+    const isIdle = state.player.state.status === AudioPlayerStatus.Idle && !state.current;
+
+    if (isIdle) {
+      // Reproducir inmediatamente
+      await playNext(guildId, client);
+      return interaction.editReply({
+        embeds: [
+          new EmbedBuilder()
+            .setColor('#1DB954')
+            .setTitle('🎶 Reproduciendo ahora')
+            .setDescription(`**[${track.title}](${track.url})**`)
+            .addFields(
+              { name: '👤 Artista',  value: track.author, inline: true },
+              { name: '⏱️ Duración', value: formatDuration(track.durationSec), inline: true }
+            )
+            .setThumbnail(track.thumbnail || null)
+            .setFooter({ text: `Solicitado por ${interaction.user.tag}` })
+        ]
+      });
+    }
+
+    // Ya hay algo reproduciéndose — añadir a la cola
+    return interaction.editReply({
+      embeds: [
+        new EmbedBuilder()
+          .setColor('#5865F2')
+          .setTitle('✅ Añadido a la cola')
+          .setDescription(`**[${track.title}](${track.url})**`)
           .addFields(
-            { name: '🎵 Canciones', value: `${res.tracks.length}`, inline: true },
-            { name: '⏱️ Duración',  value: formatDuration(res.playlist.duration), inline: true }
+            { name: '👤 Artista',       value: track.author, inline: true },
+            { name: '⏱️ Duración',      value: formatDuration(track.durationSec), inline: true },
+            { name: '📋 Posición cola', value: `${state.queue.length}`, inline: true }
           )
-          .setFooter({ text: `Solicitado por ${interaction.user.tag}` });
+          .setThumbnail(track.thumbnail || null)
+          .setFooter({ text: `Solicitado por ${interaction.user.tag}` })
+      ]
+    });
 
-        if (!player.playing && !player.paused) player.connect().play();
-        return interaction.editReply({ embeds: [embed] });
-      }
-
-      default: {
-        const track = res.tracks[0];
-        track.requester = interaction.user;
-        player.queue.add(track);
-
-        if (!player.playing && !player.paused) {
-          player.connect().play();
-          return interaction.editReply({
-            embeds: [
-              new EmbedBuilder()
-                .setColor('#1DB954')
-                .setTitle('🎶 Reproduciendo ahora')
-                .setDescription(`**[${track.title}](${track.uri})**`)
-                .addFields(
-                  { name: '👤 Artista',  value: track.author   || 'Desconocido', inline: true },
-                  { name: '⏱️ Duración', value: track.isStream ? '🔴 En vivo' : formatDuration(track.duration), inline: true }
-                )
-                .setThumbnail(track.thumbnail || null)
-                .setFooter({ text: `Solicitado por ${interaction.user.tag}` })
-            ]
-          });
-        }
-
-        return interaction.editReply({
-          embeds: [
-            new EmbedBuilder()
-              .setColor('#5865F2')
-              .setTitle('✅ Añadido a la cola')
-              .setDescription(`**[${track.title}](${track.uri})**`)
-              .addFields(
-                { name: '👤 Artista',       value: track.author || 'Desconocido', inline: true },
-                { name: '⏱️ Duración',      value: track.isStream ? '🔴 En vivo' : formatDuration(track.duration), inline: true },
-                { name: '📋 Posición cola', value: `${player.queue.size}`, inline: true }
-              )
-              .setThumbnail(track.thumbnail || null)
-              .setFooter({ text: `Solicitado por ${interaction.user.tag}` })
-          ]
-        });
-      }
-    }
   } catch (error) {
     console.error('[PLAY ERROR]', error);
     return interaction.editReply({
@@ -267,44 +271,47 @@ export async function handlePlay(interaction) {
 }
 
 export async function handlePause(interaction) {
-  const player = getPlayer(interaction.guildId);
-  if (!player || !player.playing) {
+  const state = getState(interaction.guildId);
+  if (!state || !state.current) {
     return interaction.reply({ content: '❌ No hay música activa en este servidor.', ephemeral: true });
   }
 
-  if (player.paused) {
-    player.pause(false);
+  const status = state.player.state.status;
+
+  if (status === AudioPlayerStatus.Paused) {
+    state.player.unpause();
     return interaction.reply({
       embeds: [
         new EmbedBuilder()
           .setColor('#1DB954')
           .setTitle('▶️ Música reanudada')
-          .setDescription(`Reanudando: **${player.queue.current?.title ?? 'canción actual'}**`)
+          .setDescription(`Reanudando: **${state.current.title}**`)
       ]
     });
   }
 
-  player.pause(true);
+  state.player.pause();
   return interaction.reply({
     embeds: [
       new EmbedBuilder()
         .setColor('#FEE75C')
         .setTitle('⏸️ Música pausada')
-        .setDescription(`Pausado: **${player.queue.current?.title ?? 'canción actual'}**\nUsa \`/pause\` de nuevo para reanudar.`)
+        .setDescription(`Pausado: **${state.current.title}**\nUsa \`/pause\` de nuevo para reanudar.`)
     ]
   });
 }
 
 export async function handleSkip(interaction) {
-  const player = getPlayer(interaction.guildId);
-  if (!player || !player.playing) {
+  const state = getState(interaction.guildId);
+  if (!state || !state.current) {
     return interaction.reply({ content: '❌ No hay música activa en este servidor.', ephemeral: true });
   }
 
-  const current = player.queue.current?.title ?? 'canción actual';
-  const next    = player.queue[0]?.title;
+  const current = state.current.title;
+  const next    = state.queue[0]?.title;
 
-  player.stop();
+  // Forzar Idle para que el listener dispare playNext
+  state.player.stop();
 
   return interaction.reply({
     embeds: [
@@ -317,12 +324,12 @@ export async function handleSkip(interaction) {
 }
 
 export async function handleStop(interaction) {
-  const player = getPlayer(interaction.guildId);
-  if (!player) {
+  const state = getState(interaction.guildId);
+  if (!state) {
     return interaction.reply({ content: '❌ No estoy conectado a ningún canal de voz.', ephemeral: true });
   }
 
-  player.destroy();
+  destroyState(interaction.guildId);
 
   return interaction.reply({
     embeds: [
@@ -335,14 +342,14 @@ export async function handleStop(interaction) {
 }
 
 export async function handleQueue(interaction) {
-  const player = getPlayer(interaction.guildId);
-  if (!player || (!player.playing && player.queue.size === 0)) {
+  const state = getState(interaction.guildId);
+  if (!state || (!state.current && state.queue.length === 0)) {
     return interaction.reply({ content: '❌ La cola está vacía.', ephemeral: true });
   }
 
-  const current  = player.queue.current;
-  const upcoming = player.queue.slice(0, 10);
-  const total    = player.queue.size;
+  const current  = state.current;
+  const upcoming = state.queue.slice(0, 10);
+  const total    = state.queue.length;
 
   const embed = new EmbedBuilder()
     .setColor('#5865F2')
@@ -350,16 +357,15 @@ export async function handleQueue(interaction) {
     .setTimestamp();
 
   if (current) {
-    const bar = buildProgressBar(player.position, current.duration);
     embed.addFields({
       name: '▶️ Reproduciendo ahora',
-      value: `**[${current.title}](${current.uri})**\n${bar}\n\`${formatDuration(player.position)} / ${formatDuration(current.duration)}\``
+      value: `**[${current.title}](${current.url})**\n\`Duración: ${formatDuration(current.durationSec)}\``
     });
   }
 
   if (upcoming.length > 0) {
     const list = upcoming.map((t, i) =>
-      `\`${i + 1}.\` **${t.title}** — \`${formatDuration(t.duration)}\``
+      `\`${i + 1}.\` **${t.title}** — \`${formatDuration(t.durationSec)}\``
     ).join('\n');
     embed.addFields({ name: `📜 Próximas canciones (${total} en total)`, value: list });
   }
@@ -372,13 +378,14 @@ export async function handleQueue(interaction) {
 }
 
 export async function handleVolume(interaction) {
-  const player = getPlayer(interaction.guildId);
-  if (!player || !player.playing) {
+  const state = getState(interaction.guildId);
+  if (!state || !state.current) {
     return interaction.reply({ content: '❌ No hay música activa en este servidor.', ephemeral: true });
   }
 
   const level = interaction.options.getInteger('level');
-  player.setVolume(level);
+  state.volume = level;
+  state.resource?.volume?.setVolume(level / 100);
 
   const bar   = '█'.repeat(Math.floor(level / 10)) + '░'.repeat(10 - Math.floor(level / 10));
   const emoji = level === 0 ? '🔇' : level < 30 ? '🔈' : level < 70 ? '🔉' : '🔊';
@@ -394,28 +401,25 @@ export async function handleVolume(interaction) {
 }
 
 export async function handleNowPlaying(interaction) {
-  const player = getPlayer(interaction.guildId);
-  if (!player || !player.queue.current) {
+  const state = getState(interaction.guildId);
+  if (!state || !state.current) {
     return interaction.reply({ content: '❌ No hay ninguna canción reproduciéndose ahora mismo.', ephemeral: true });
   }
 
-  const track = player.queue.current;
-  const bar   = buildProgressBar(player.position, track.duration);
+  const track = state.current;
 
   const embed = new EmbedBuilder()
     .setColor('#1DB954')
     .setTitle('🎶 Reproduciendo ahora')
-    .setDescription(`**[${track.title}](${track.uri})**`)
+    .setDescription(`**[${track.title}](${track.url})**`)
     .addFields(
-      { name: '👤 Artista',   value: track.author || 'Desconocido', inline: true },
-      { name: '⏱️ Duración',  value: track.isStream ? '🔴 En vivo' : formatDuration(track.duration), inline: true },
-      { name: '🔊 Volumen',   value: `${player.volume}%`, inline: true },
-      { name: '📊 Progreso',  value: `${bar}\n\`${formatDuration(player.position)} / ${formatDuration(track.duration)}\``, inline: false }
+      { name: '👤 Artista',  value: track.author || 'Desconocido', inline: true },
+      { name: '⏱️ Duración', value: formatDuration(track.durationSec), inline: true },
+      { name: '🔊 Volumen',  value: `${state.volume}%`, inline: true }
     )
     .setThumbnail(track.thumbnail || null)
-    .setFooter({ text: `Solicitado por ${track.requester?.tag ?? 'Desconocido'}` })
+    .setFooter({ text: `Solicitado por ${track.requesterTag ?? 'Desconocido'}` })
     .setTimestamp();
 
   return interaction.reply({ embeds: [embed] });
 }
-

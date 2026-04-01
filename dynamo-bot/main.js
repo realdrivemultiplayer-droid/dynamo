@@ -158,7 +158,7 @@ client.on('ready', async () => {
   await loadAllGuildConfigs(client.guilds.cache);
 
   await initMusicManager(client);
-  console.log('[MUSIC] Manager de Lavalink inicializado.');
+  console.log('[MUSIC] Sistema de música inicializado.');
 
   try {
     const rest = new REST({ version: '10' }).setToken(process.env.BOT_TOKEN);
