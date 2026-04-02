@@ -177,7 +177,7 @@ client.on('ready', async () => {
       status: 'online',
       activities: [
         {
-          name: `${totalUsers.toLocaleString()} usuarios en ${totalGuilds} servidores`,
+          name: `Sloet Froom: ${totalUsers.toLocaleString()} Users / ${totalGuilds} servers`,
           type: ActivityType.Watching
         }
       ]
