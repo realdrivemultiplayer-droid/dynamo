@@ -32,6 +32,8 @@ export async function initDB() {
         PRIMARY KEY (user_id, guild_id)
       );
 
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_users_unique ON users(user_id, guild_id);
+
       CREATE TABLE IF NOT EXISTS guild_configs (
         guild_id TEXT PRIMARY KEY,
         welcome_channel_id TEXT,
