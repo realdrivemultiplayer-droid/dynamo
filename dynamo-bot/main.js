@@ -14,6 +14,12 @@ import { handleLevelup, handleModeration, handleRankCommand, handleLeaderboardCo
 import { initMusicManager, handlePlay, handlePause, handleSkip, handleStop, handleQueue, handleVolume, handleNowPlaying } from './modules/music.js';
 import * as Logs from './modules/logs.js';
 import { getLanguage, setUserLanguage, t } from './modules/i18n.js';
+import {
+  handleBanCommand, handleKickCommand, handleMuteCommand, handleUnmuteCommand,
+  handleWarnCommand, handleWarningsCommand, handleClearCommand, handleSlowmodeCommand,
+  handleLockCommand, handleUnlockCommand, handleAntiSpamCommand, handleAntiBotCommand,
+  handleAntiRaidCommand
+} from './modules/moderation.js';
 
 const DYNAMO_PATH = './dynamo.sf';
 
@@ -142,6 +148,78 @@ const slashCommands = [
       .setDescription('Muestra la configuracion actual de este servidor')
     ),
 
+  // ── Moderacion ──
+  new SlashCommandBuilder()
+    .setName('ban')
+    .setDescription('Banea a un usuario del servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.BanMembers)
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a banear').setRequired(true))
+    .addStringOption(opt => opt.setName('razon').setDescription('Razón del baneo').setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('kick')
+    .setDescription('Expulsa a un usuario del servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.KickMembers)
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a expulsar').setRequired(true))
+    .addStringOption(opt => opt.setName('razon').setDescription('Razón de la expulsión').setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('mute')
+    .setDescription('Silencia a un usuario temporalmente')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a silenciar').setRequired(true))
+    .addIntegerOption(opt => opt.setName('tiempo').setDescription('Duración en minutos').setRequired(false).setMinValue(1).setMaxValue(40320))
+    .addStringOption(opt => opt.setName('razon').setDescription('Razón del silencio').setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('unmute')
+    .setDescription('Quita el silencio a un usuario')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a dessilenciar').setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('warn')
+    .setDescription('Registra una advertencia para un usuario')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a advertir').setRequired(true))
+    .addStringOption(opt => opt.setName('razon').setDescription('Razón de la advertencia').setRequired(false)),
+  new SlashCommandBuilder()
+    .setName('warnings')
+    .setDescription('Muestra las advertencias de un usuario')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ModerateMembers)
+    .addUserOption(opt => opt.setName('usuario').setDescription('Usuario a consultar').setRequired(true)),
+  new SlashCommandBuilder()
+    .setName('clear')
+    .setDescription('Elimina mensajes del canal actual')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageMessages)
+    .addIntegerOption(opt => opt.setName('cantidad').setDescription('Cantidad de mensajes a eliminar (1-100)').setRequired(true).setMinValue(1).setMaxValue(100)),
+  new SlashCommandBuilder()
+    .setName('slowmode')
+    .setDescription('Establece el modo lento en el canal actual')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .addIntegerOption(opt => opt.setName('segundos').setDescription('Segundos entre mensajes (0 para desactivar)').setRequired(true).setMinValue(0).setMaxValue(21600)),
+  new SlashCommandBuilder()
+    .setName('lock')
+    .setDescription('Bloquea un canal para que nadie pueda escribir')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .addChannelOption(opt => opt.setName('canal').setDescription('Canal a bloquear (por defecto el actual)').setRequired(false).addChannelTypes(ChannelType.GuildText)),
+  new SlashCommandBuilder()
+    .setName('unlock')
+    .setDescription('Desbloquea un canal')
+    .setDefaultMemberPermissions(PermissionFlagsBits.ManageChannels)
+    .addChannelOption(opt => opt.setName('canal').setDescription('Canal a desbloquear (por defecto el actual)').setRequired(false).addChannelTypes(ChannelType.GuildText)),
+  new SlashCommandBuilder()
+    .setName('antispam')
+    .setDescription('Activa o desactiva el anti-spam del servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addStringOption(opt => opt.setName('estado').setDescription('on o off').setRequired(true).addChoices({ name: 'Activar', value: 'on' }, { name: 'Desactivar', value: 'off' })),
+  new SlashCommandBuilder()
+    .setName('antibot')
+    .setDescription('Activa o desactiva el anti-bot del servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addStringOption(opt => opt.setName('estado').setDescription('on o off').setRequired(true).addChoices({ name: 'Activar', value: 'on' }, { name: 'Desactivar', value: 'off' })),
+  new SlashCommandBuilder()
+    .setName('antiraid')
+    .setDescription('Activa o desactiva el anti-raid del servidor')
+    .setDefaultMemberPermissions(PermissionFlagsBits.Administrator)
+    .addStringOption(opt => opt.setName('estado').setDescription('on o off').setRequired(true).addChoices({ name: 'Activar', value: 'on' }, { name: 'Desactivar', value: 'off' })),
+
   // ── Idioma ──
   new SlashCommandBuilder()
     .setName('language')
@@ -244,6 +322,19 @@ client.on('interactionCreate', async (interaction) => {
       case 'ia':           return await handleIACommand(interaction);
       case 'config':     return await handleConfigCommand(interaction);
       case 'language':   return await handleLanguageCommand(interaction);
+      case 'ban':        return await handleBanCommand(interaction);
+      case 'kick':       return await handleKickCommand(interaction);
+      case 'mute':       return await handleMuteCommand(interaction);
+      case 'unmute':     return await handleUnmuteCommand(interaction);
+      case 'warn':       return await handleWarnCommand(interaction);
+      case 'warnings':   return await handleWarningsCommand(interaction);
+      case 'clear':      return await handleClearCommand(interaction);
+      case 'slowmode':   return await handleSlowmodeCommand(interaction);
+      case 'lock':       return await handleLockCommand(interaction);
+      case 'unlock':     return await handleUnlockCommand(interaction);
+      case 'antispam':   return await handleAntiSpamCommand(interaction);
+      case 'antibot':    return await handleAntiBotCommand(interaction);
+      case 'antiraid':   return await handleAntiRaidCommand(interaction);
     }
   } catch (error) {
     console.error(`Error en /${interaction.commandName}:`, error);

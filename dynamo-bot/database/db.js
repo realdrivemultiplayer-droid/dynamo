@@ -85,6 +85,33 @@ export async function initDB() {
         language TEXT DEFAULT 'es',
         PRIMARY KEY (user_id, guild_id)
       );
+
+      CREATE TABLE IF NOT EXISTS mod_logs (
+        id SERIAL PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        moderator_id TEXT NOT NULL,
+        target_id TEXT NOT NULL,
+        reason TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS user_warnings (
+        id SERIAL PRIMARY KEY,
+        guild_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        moderator_id TEXT NOT NULL,
+        reason TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
+
+      CREATE TABLE IF NOT EXISTS mod_settings (
+        guild_id TEXT PRIMARY KEY,
+        anti_spam BOOLEAN DEFAULT FALSE,
+        anti_bot BOOLEAN DEFAULT FALSE,
+        anti_raid BOOLEAN DEFAULT FALSE,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      );
     `);
     
     console.log('✅ Base de datos PostgreSQL inicializada y conectada.');
