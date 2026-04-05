@@ -4,7 +4,7 @@ const helpCategories = {
   musica: {
     name: 'Música',
     emoji: '🎵',
-    description: 'Comandos para reproducir música - Actualmente en desarrollo',
+    description: 'Comandos para reproducir música',
     commands: [
       { name: '/play <canción>', desc: 'Reproduce una canción' },
       { name: '/pause', desc: 'Pausa o reanuda la música' },
@@ -17,8 +17,8 @@ const helpCategories = {
   },
   niveles: {
     name: 'Niveles',
-    emoji: '•',
-    description: 'Comandos del sistema de niveles y XP - Actualmente en desarrollo',
+    emoji: '📊',
+    description: 'Comandos del sistema de niveles y XP',
     commands: [
       { name: '/rank [usuario]', desc: 'Ver tu rango y XP' },
       { name: '/leaderboard', desc: 'Top 10 usuarios por XP' },
@@ -27,7 +27,7 @@ const helpCategories = {
   },
   moderacion: {
     name: 'Moderación',
-    emoji: '•',
+    emoji: '🛡️',
     description: 'Comandos de moderación y seguridad',
     commands: [
       { name: '/ban <@usuario> [razón]', desc: 'Banear usuario' },
@@ -47,7 +47,7 @@ const helpCategories = {
   },
   configuracion: {
     name: 'Configuración',
-    emoji: '•',
+    emoji: '⚙️',
     description: 'Comandos de configuración del servidor',
     commands: [
       { name: '/config welcome <#canal>', desc: 'Canal de bienvenida' },
@@ -64,7 +64,7 @@ const helpCategories = {
   },
   idioma: {
     name: 'Idioma',
-    emoji: '•',
+    emoji: '🌐',
     description: 'Cambiar idioma del bot',
     commands: [
       { name: '/language <español|english>', desc: 'Cambiar idioma' }
@@ -72,7 +72,7 @@ const helpCategories = {
   },
   ia: {
     name: 'Inteligencia Artificial',
-    emoji: '•',
+    emoji: '🤖',
     description: 'Comandos de IA',
     commands: [
       { name: '/ia enable', desc: 'Activar IA en el servidor' },
@@ -111,12 +111,12 @@ function createSelectMenu() {
         .setCustomId('help_select')
         .setPlaceholder('Selecciona una categoría...')
         .addOptions([
-          { label: 'Música', value: 'musica', emoji: '•' },
-          { label: 'Niveles', value: 'niveles', emoji: '•' },
-          { label: 'Moderación', value: 'moderacion', emoji: '•' },
-          { label: 'Configuración', value: 'configuracion', emoji: '•' },
-          { label: 'Idioma', value: 'idioma', emoji: '•' },
-          { label: 'Inteligencia Artificial', value: 'ia', emoji: '•' }
+          { label: 'Música', value: 'musica', emoji: '🎵' },
+          { label: 'Niveles', value: 'niveles', emoji: '📊' },
+          { label: 'Moderación', value: 'moderacion', emoji: '🛡️' },
+          { label: 'Configuración', value: 'configuracion', emoji: '⚙️' },
+          { label: 'Idioma', value: 'idioma', emoji: '🌐' },
+          { label: 'Inteligencia Artificial', value: 'ia', emoji: '🤖' }
         ])
     );
 }
@@ -128,12 +128,12 @@ export async function handleHelpCommand(interaction) {
       .setTitle('Dynamo Bot - Sistema de Ayuda')
       .setDescription('Selecciona una categoría para ver los comandos disponibles.')
       .addFields(
-        { name: '• Música', value: '7 comandos', inline: true },
-        { name: '• Niveles', value: '3 comandos', inline: true },
-        { name: '• Moderación', value: '13 comandos', inline: true },
-        { name: '• Configuración', value: '10 comandos', inline: true },
-        { name: '• Idioma', value: '1 comando', inline: true },
-        { name: '• IA', value: '3 comandos', inline: true }
+        { name: '🎵 Música', value: '7 comandos', inline: true },
+        { name: '📊 Niveles', value: '3 comandos', inline: true },
+        { name: '🛡️ Moderación', value: '13 comandos', inline: true },
+        { name: '⚙️ Configuración', value: '10 comandos', inline: true },
+        { name: '🌐 Idioma', value: '1 comando', inline: true },
+        { name: '🤖 IA', value: '3 comandos', inline: true }
       )
       .setFooter({ text: 'Total: 37 comandos disponibles' })
       .setTimestamp();
