@@ -1,115 +1,159 @@
-import axios from 'axios';
-import { EmbedBuilder } from 'discord.js';
+import { getDB } from '../database/db.js';
+import { PermissionFlagsBits } from 'discord.js';
 
-const conversationHistory = new Map();
-const MAX_HISTORY = 10;
+const conversations = new Map();
+const userUsage = new Map();
+
+const LIMIT_DMS = 20;
+const LIMIT_SERVER = 30;
+const COOLDOWN_MINUTES = 2;
+const MAX_CONTENT_LENGTH = 1000;
+
+function getGroqKeys(config) {
+  const raw = config.GROQ_KEYS || config.GROQ_KEY || '';
+  return String(raw).split(',').map(k => k.trim()).filter(Boolean);
+}
+
+function formatTimeRemaining(milliseconds) {
+  const totalSeconds = Math.ceil(milliseconds / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}m ${seconds}s`;
+}
+
+function checkSpam(id, limit) {
+  const now = Date.now();
+  const data = userUsage.get(id) || { count: 0, cooldownUntil: 0 };
+  if (data.cooldownUntil > now) {
+    const timeRemaining = data.cooldownUntil - now;
+    return { allowed: false, timeRemaining };
+  }
+  if (data.count >= limit) {
+    userUsage.set(id, { count: 0, cooldownUntil: now + (COOLDOWN_MINUTES * 60 * 1000) });
+    return { allowed: false, timeRemaining: COOLDOWN_MINUTES * 60 * 1000 };
+  }
+  return { allowed: true };
+}
+
+function recordUsage(id) {
+  const data = userUsage.get(id) || { count: 0, cooldownUntil: 0 };
+  userUsage.set(id, { ...data, count: data.count + 1 });
+}
 
 export async function handleIA(message, globalConfig, guildConfig) {
-  try {
-    // Ignorar bots
-    if (message.author.bot) return false;
+  if (message.author.bot) return false;
 
-    // Verificar si es DM o si la IA está habilitada en el servidor
-    const isDM = message.channel.isDMBased();
-    if (!isDM && guildConfig?.ia_enabled !== 1) return false;
+  // Validar permisos
+  if (message.guild && !message.guild.members.me.permissionsIn(message.channel).has(PermissionFlagsBits.SendMessages)) {
+    return false;
+  }
 
-    // Ignorar si no menciona al bot o no es DM
-    if (!isDM && !message.mentions.has(message.client.user.id)) return false;
+  const isDM = message.channel.isDMBased();
+  const isMentioned = message.mentions.has(message.client.user);
+  const userId = message.author.id;
+  const userName = message.author.username;
+  const userTag = message.author.tag;
+  const limitId = isDM ? userId : message.guildId;
 
-    // Mostrar que está escribiendo
-    await message.channel.sendTyping();
+  // Validar si debe responder
+  if (!isDM) {
+    if (!guildConfig?.ia_enabled || !isMentioned) return false;
+  }
 
-    const userId = message.author.id;
-    const userName = message.author.username;
-    const userTag = message.author.tag;
-    const content = message.content
-      .replace(`<@${message.client.user.id}>`, '')
-      .replace(`<@!${message.client.user.id}>`, '')
-      .trim();
+  // Filtrar mensajes inútiles
+  const userContent = message.content.replace(/<@!?\d+>/g, '').trim();
+  if (userContent.length < 3) return false;
 
-    if (!content) {
-      return message.reply('Hola ' + userName + ', ¿en qué puedo ayudarte?');
-    }
+  // Limitar longitud
+  if (userContent.length > MAX_CONTENT_LENGTH) {
+    await message.reply(`Tu mensaje es muy largo. Máximo ${MAX_CONTENT_LENGTH} caracteres.`).catch(() => {});
+    return true;
+  }
 
-    // Obtener historial de conversación
-    const cacheKey = `${message.guildId || 'DM'}:${userId}`;
-    let history = conversationHistory.get(cacheKey) || [];
+  const keys = getGroqKeys(globalConfig);
+  if (!keys.length) return false;
 
-    // Agregar mensaje del usuario al historial
-    history.push({
-      role: 'user',
-      content: `${userName} dice: ${content}`
-    });
+  const currentLimit = isDM ? LIMIT_DMS : LIMIT_SERVER;
+  const spamCheck = checkSpam(limitId, currentLimit);
 
-    // Mantener solo los últimos MAX_HISTORY mensajes
-    if (history.length > MAX_HISTORY) {
-      history = history.slice(-MAX_HISTORY);
-    }
+  if (!spamCheck.allowed) {
+    const timeRemaining = formatTimeRemaining(spamCheck.timeRemaining);
+    const msg = isDM
+      ? `Has alcanzado tu límite de mensajes. Por favor espera ${timeRemaining} para continuar.`
+      : `Se alcanzó el límite de mensajes en este servidor. Por favor espera ${timeRemaining} para continuar.`;
+    await message.reply(msg).catch(() => {});
+    return true;
+  }
 
-    // Construir prompt del sistema
-    const systemPrompt = `Eres un asistente de IA amigable y útil llamado Dynamo. 
-Tu objetivo es ayudar a los usuarios de Discord de manera inteligente y conversacional.
+  recordUsage(limitId);
+
+  const history = conversations.get(userId) || [];
+  history.push({ role: 'user', content: `${userName} (ID: ${userId}) dice: ${userContent}` });
+  if (history.length > 10) history.splice(0, 2);
+  conversations.set(userId, history);
+
+  const systemPrompt = `Eres Dynamo, un asistente de IA amigable y útil en Discord.
 El usuario actual es ${userTag} (ID: ${userId}).
 Responde siempre en español, de manera natural y concisa.
 Sé amable, profesional y útil.
 Si no sabes algo, admítelo honestamente.
-Máximo 2000 caracteres por respuesta.`;
+Máximo 2000 caracteres por respuesta.
+No compartas datos privados de usuarios.`;
 
-    // Llamar a la API de OpenAI (o alternativa)
-    const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: 'llama-3.1-8b-instant',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          ...history
-        ],
-        temperature: 0.7,
-        max_tokens: 500,
-        top_p: 0.9
-      },
-      {
+  let lastError;
+  for (const key of keys) {
+    try {
+      await message.channel.sendTyping().catch(() => {});
+
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
         headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Authorization': `Bearer ${key}`,
           'Content-Type': 'application/json'
-        }
+        },
+        body: JSON.stringify({
+          model: 'llama-3.1-8b-instant',
+          messages: [{ role: 'system', content: systemPrompt }, ...history],
+          max_tokens: 500,
+          temperature: 0.7
+        })
+      });
+
+      if (!response.ok) {
+        const err = await response.json().catch(() => ({}));
+        throw new Error(err.error?.message || 'Groq API error');
       }
-    ).catch(async (error) => {
-      console.error('[IA] Error en API:', error.message);
-      return null;
-    });
 
-    if (!response || !response.data?.choices?.[0]?.message?.content) {
-      return message.reply('Ocurrió un error al procesar tu mensaje. Intenta de nuevo.');
-    }
+      const data = await response.json();
+      const reply = data.choices[0]?.message?.content;
+      if (!reply) throw new Error('Respuesta vacía');
 
-    const aiResponse = response.data.choices[0].message.content.trim();
+      history.push({ role: 'assistant', content: reply });
 
-    // Agregar respuesta de IA al historial
-    history.push({
-      role: 'assistant',
-      content: aiResponse
-    });
+      // Guardar en DB
+      const db = getDB();
+      const guildId = message.guildId || 'DM';
 
-    // Guardar historial actualizado
-    conversationHistory.set(cacheKey, history);
+      await db.none(
+        `INSERT INTO users (user_id, guild_id, username) VALUES ($1, $2, $3)
+         ON CONFLICT (user_id, guild_id) DO UPDATE SET username = $3`,
+        [userId, guildId, message.author.username]
+      ).catch(err => console.error('[IA] Error DB:', err));
 
-    // Dividir respuesta si es muy larga
-    if (aiResponse.length > 2000) {
-      const chunks = aiResponse.match(/[\s\S]{1,1990}/g) || [];
+      const chunks = reply.match(/[\s\S]{1,2000}/g) || [reply];
       for (const chunk of chunks) {
         await message.reply(chunk).catch(() => {});
       }
-    } else {
-      await message.reply(aiResponse);
+
+      return true;
+    } catch (error) {
+      lastError = error;
+      console.error(`[IA] Error con key: ${error.message}`);
     }
-
-    return true;
-
-  } catch (error) {
-    console.error('[IA] Error:', error);
-    return message.reply('Ocurrió un error inesperado. Intenta de nuevo.').catch(() => {});
   }
+
+  await message.reply('Error al conectar con el sistema de IA. Intenta de nuevo.').catch(() => {});
+  return true;
 }
 
 export async function handleIACommand(interaction) {
@@ -118,10 +162,10 @@ export async function handleIACommand(interaction) {
     const enabled = sub === 'enable' ? 1 : 0;
 
     console.log(`[IA] Guardando IA config: ia_enabled = ${enabled} (Guild: ${interaction.guildId})`);
-    
+
     const { setConfig } = await import('./config-manager.js');
     await setConfig(interaction.guildId, 'ia_enabled', enabled);
-    
+
     await interaction.reply({
       content: enabled
         ? 'Asistente de IA activado en este servidor.'
@@ -130,15 +174,15 @@ export async function handleIACommand(interaction) {
     });
   } catch (error) {
     console.error('[IA] Error en handleIACommand:', error);
-    await interaction.reply({ 
-      content: 'Ocurrió un error al cambiar la configuración de IA.', 
-      ephemeral: true 
+    await interaction.reply({
+      content: 'Ocurrió un error al cambiar la configuración de IA.',
+      ephemeral: true
     });
   }
 }
 
-// Limpiar historial antiguo cada hora
+// Limpiar historial cada hora
 setInterval(() => {
-  conversationHistory.clear();
+  conversations.clear();
   console.log('[IA] Historial de conversaciones limpiado.');
 }, 60 * 60 * 1000);
