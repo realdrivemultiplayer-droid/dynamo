@@ -291,7 +291,7 @@ client.on('ready', async () => {
       status: 'online',
       activities: [
         {
-          name: `${totalUsers.toLocaleString()} usuarios en ${totalGuilds} servidores`,
+          name: `/help - ${totalUsers.toLocaleString()} Users in ${totalGuilds} servers`,
           type: ActivityType.Watching
         }
       ]
